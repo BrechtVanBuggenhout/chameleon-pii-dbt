@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: pii_registry
+    description: >
+      Flat PII registry — one row per (model, PII field), assembled from declared
+      `meta.pii` tags and column-name inference across the whole dbt project.
+      Built from graph metadata only; issues no warehouse queries.
+    columns:
+      - name: resource_id
+        description: "Stable id, e.g. bigquery:project.dataset.model."
+        tests: [not_null]
+      - name: field_name
+        description: Column flagged as PII.
+        tests: [not_null]
+      - name: classification
+        description: DIRECT_IDENTIFIER | QUASI_IDENTIFIER | CONTACT | SENSITIVE | BEHAVIORAL | SYSTEM_IDENTIFIER.
+        tests:
+          - accepted_values:
+              values: [DIRECT_IDENTIFIER, QUASI_IDENTIFIER, CONTACT, SENSITIVE, BEHAVIORAL, SYSTEM_IDENTIFIER]
+      - name: handling
+        description: How the field must be handled (ENCRYPT, TOKENIZE, REDACT, HASH_SURROGATE, ALLOW_AGGREGATE_ONLY, MANUAL_REVIEW).
+      - name: confidence
+        description: DECLARED for meta-tagged columns; INFERRED_* for name matches.
+      - name: detection_method
+        description: DECLARED or NAME_INFERENCE.
+      - name: required_in_mart
+        description: Whether the field is intentionally allowed to reach mart layers.
+
+  - name: pii_field_lineage
+    description: >
+      The "used where" map: every downstream model a PII field propagates into,
+      with hop distance. Bounded by DAG size, not row count.
+    columns:
+      - name: source_resource_id
+        description: Where the PII field originates.
+      - name: downstream_resource_id
+        description: A model the field flows into.
+      - name: field_name
+        description: The propagated PII column.
+      - name: hops
+        description: DAG distance from origin to this downstream model.

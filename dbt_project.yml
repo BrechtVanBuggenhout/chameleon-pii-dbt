@@ -1,0 +1,35 @@
+name: chameleon_pii
+version: "0.1.0"
+config-version: 2
+
+require-dbt-version: [">=1.5.0", "<2.0.0"]
+
+macro-paths: ["macros"]
+model-paths: ["models"]
+
+vars:
+  # Master switch for name-based inference on documented columns.
+  pii_inference_enabled: true
+
+  # How confident a name-pattern match is. Declared columns are always DECLARED.
+  pii_inference_confidence: "INFERRED_HIGH"
+
+  # Column-name patterns → classification. Override in your project's vars
+  # to add company-specific names. Keys are case-insensitive regexes matched
+  # against the column name.
+  pii_name_patterns:
+    "(^|_)email(_|$)": "DIRECT_IDENTIFIER"
+    "(^|_)e_?mail": "DIRECT_IDENTIFIER"
+    "(^|_)phone(_|$)|msisdn|mobile_number": "CONTACT"
+    "(^|_)ssn(_|$)|social_security": "DIRECT_IDENTIFIER"
+    "(^|_)dob(_|$)|date_of_birth|birth_date": "QUASI_IDENTIFIER"
+    "first_name|last_name|full_name|(^|_)name$": "DIRECT_IDENTIFIER"
+    "(^|_)address(_|$)|street|postcode|zip_code|postal": "QUASI_IDENTIFIER"
+    "(^|_)ip(_address)?$|ip_addr": "QUASI_IDENTIFIER"
+    "passport|national_id|tax_id|drivers_license": "DIRECT_IDENTIFIER"
+    "credit_card|card_number|iban|account_number": "SENSITIVE"
+
+models:
+  chameleon_pii:
+    registry:
+      +materialized: table
