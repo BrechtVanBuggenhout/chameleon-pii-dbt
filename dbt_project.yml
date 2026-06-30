@@ -11,6 +11,12 @@ vars:
   # Master switch for name-based inference on documented columns.
   pii_inference_enabled: true
 
+  # Discovery: scan INFORMATION_SCHEMA column names for undeclared PII.
+  # Metadata only (reads names, not values). Defaults to the target dataset;
+  # override with a list of datasets to widen coverage.
+  pii_discovery_enabled: true
+  # pii_discovery_datasets: ["analytics", "raw", "marts"]
+
   # How confident a name-pattern match is. Declared columns are always DECLARED.
   pii_inference_confidence: "INFERRED_HIGH"
 
@@ -32,4 +38,6 @@ vars:
 models:
   chameleon_pii:
     registry:
+      +materialized: table
+    discovery:
       +materialized: table

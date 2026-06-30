@@ -4,10 +4,13 @@ A dbt package that **automatically flags PII columns and builds a registry** of 
 sensitive data lives and where it flows — directly inside your dbt project.
 
 You declare PII once (or let the package infer it from column names), run `dbt build`,
-and you get two tables in your own warehouse:
+and you get three tables in your own warehouse:
 
 - `pii_registry` — one row per (model, PII field): classification, handling, confidence.
 - `pii_field_lineage` — the "used where" map: every downstream model each PII field reaches.
+- `pii_discovery` — undeclared PII: columns that look like PII by name (read from
+  `INFORMATION_SCHEMA`) but were never declared via `meta.pii`. This catches PII in
+  tables you never documented, including raw sources and leaks into mart layers.
 
 It is **metadata-first and performant by design**: detection and lineage read the dbt
 graph only and issue zero warehouse queries, so they are safe to run on every build.
@@ -82,14 +85,33 @@ vars:
 |-------|------|------|
 | Declare — `meta.pii` + name inference | free (graph only) | every build |
 | Propagate — DAG walk → `pii_field_lineage` | free (graph only) | every build |
-| Scan — sample column values for undeclared PII | warehouse cost | scheduled (roadmap) |
+| Discover — `INFORMATION_SCHEMA` name scan → `pii_discovery` | cheap (metadata query, names not values) | every build |
+| Scan — sample column *values* for undeclared PII | warehouse cost | scheduled (roadmap) |
+
+### Discovery
+
+`pii_discovery` reads column **names** from `INFORMATION_SCHEMA.COLUMNS` across the
+configured datasets and flags any that match a PII name pattern but are not declared.
+It reads names, not row values, so it stays in the metadata plane. Configure it with:
+
+```yaml
+vars:
+  pii_discovery_enabled: true
+  pii_discovery_datasets: ["analytics", "raw"]   # defaults to the target dataset
+```
+
+Discovery is high-recall by design: a column called `subscription_name` will match the
+`name` pattern even though it is not a person's name. Findings are `INFERRED` candidates
+to review — promote the real ones to `meta.pii` declarations, and tune `pii_name_patterns`
+to cut noise.
 
 ## Roadmap
 
+- `expect_no_undeclared_pii` — generic test to fail CI when `pii_discovery` is non-empty.
+- Shred-readiness view — flag PII that propagates into places it can't be cleanly
+  crypto-shredded (built on `pii_field_lineage`).
 - `pii_scan_findings` — sampled content scan (TABLESAMPLE, schema-hash cache, byte caps).
 - `pii_scan_events` — append-only change log written only on diffs.
-- `expect_no_undeclared_pii` — generic test to fail CI on undeclared PII.
-- `information_schema` discovery — name inference over *undocumented* columns.
 - Column-rename-aware lineage propagation.
 - `publish_registry` run-operation — push the registry to an external control plane
   (e.g. the Chameleon Key Vault).

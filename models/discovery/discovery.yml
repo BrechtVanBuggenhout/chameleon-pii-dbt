@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: pii_discovery
+    description: >
+      Undeclared-PII discovery. Column names from INFORMATION_SCHEMA across the
+      configured datasets that match a PII name pattern but are NOT declared via
+      `meta.pii`. Metadata only — reads column names, not row values. Surfaces the
+      PII the registry can't see because it was never documented.
+    columns:
+      - name: resource_id
+        description: "Stable id, e.g. bigquery:project.dataset.table."
+      - name: table_name
+        description: Table the undeclared column lives in.
+      - name: field_name
+        description: The PII-looking, undeclared column.
+      - name: classification
+        description: Inferred classification from the column name.
+      - name: detection_method
+        description: Always INFORMATION_SCHEMA for this model.
+      - name: discovered_at
+        description: When the discovery scan ran.
