@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: pii_shred_readiness
+    description: >
+      Crypto-shred readiness verdict per PII field. Combines the declared registry,
+      discovered undeclared columns, and downstream lineage to answer: can this field
+      be crypto-shredded, and where does it escape to?
+    columns:
+      - name: field_name
+        description: The PII column being assessed.
+      - name: readiness
+        description: READY | AT_RISK | NOT_SHREDDABLE | UNREGISTERED.
+        tests:
+          - accepted_values:
+              values: [READY, AT_RISK, NOT_SHREDDABLE, UNREGISTERED]
+      - name: has_crypto_anchor
+        description: Whether handling is encrypt/tokenize/surrogate (shreddable by key destruction).
+      - name: reaches_mart
+        description: Whether the field reaches a mart/aggregate layer where row-level shred may not apply.
+      - name: downstream_count
+        description: How many downstream models the field flows into (lineage blast radius).
+      - name: reasons
+        description: Human-readable explanation of the verdict.

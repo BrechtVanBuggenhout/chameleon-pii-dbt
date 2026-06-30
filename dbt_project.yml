@@ -41,3 +41,5 @@ models:
       +materialized: table
     discovery:
       +materialized: table
+    readiness:
+      +materialized: table
