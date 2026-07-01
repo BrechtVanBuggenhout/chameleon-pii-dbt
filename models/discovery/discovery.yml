@@ -7,6 +7,8 @@ models:
       configured datasets that match a PII name pattern but are NOT declared via
       `meta.pii`. Metadata only — reads column names, not row values. Surfaces the
       PII the registry can't see because it was never documented.
+    tests:
+      - chameleon_pii.no_undeclared_pii
     columns:
       - name: resource_id
         description: "Stable id, e.g. bigquery:project.dataset.table."

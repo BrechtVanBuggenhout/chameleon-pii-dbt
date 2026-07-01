@@ -17,6 +17,11 @@ vars:
   pii_discovery_enabled: true
   # pii_discovery_datasets: ["analytics", "raw", "marts"]
 
+  # CI enforcement: the no_undeclared_pii test on pii_discovery. Defaults to 'warn'
+  # so installing the package never breaks a build; set to 'error' in CI to enforce.
+  pii_undeclared_severity: warn
+  pii_undeclared_allowlist: []
+
   # How confident a name-pattern match is. Declared columns are always DECLARED.
   pii_inference_confidence: "INFERRED_HIGH"
 
