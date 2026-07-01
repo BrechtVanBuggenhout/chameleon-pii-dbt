@@ -24,7 +24,7 @@ select
   cast(null as {{ dbt.type_string() }}) as confidence,
   cast(null as {{ dbt.type_string() }}) as detection_method,
   cast(null as {{ dbt.type_timestamp() }}) as discovered_at
-where 1 = 0
+limit 0
 {%- else %}
 
 with all_columns as (
@@ -40,7 +40,7 @@ with all_columns as (
 declared as (
   {%- if declared | length == 0 %}
   select cast(null as {{ dbt.type_string() }}) as table_name, cast(null as {{ dbt.type_string() }}) as column_name
-  where 1 = 0
+  limit 0
   {%- else %}
   {%- for d in declared %}
   select '{{ d.model_name | replace("'", "''") }}' as table_name, '{{ d.field_name | replace("'", "''") }}' as column_name

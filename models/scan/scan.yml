@@ -1,0 +1,24 @@
+version: 2
+
+models:
+  - name: pii_content_findings
+    description: >
+      Content/value scan results. PII found by inspecting actual column VALUES in
+      name-innocent STRING columns (e.g. emails inside a free-text `notes` column) —
+      the PII that name-based detection can't see. OFF by default
+      (var pii_content_scan_enabled); the expensive data plane, run on a schedule.
+    columns:
+      - name: table_name
+        description: Table scanned.
+      - name: column_name
+        description: Name-innocent column whose values matched a PII pattern.
+      - name: pattern
+        description: EMAIL | PHONE | SSN | CREDIT_CARD | IP.
+      - name: classification
+        description: Inferred classification for the matched value pattern.
+      - name: sampled_rows
+        description: Rows examined in the sample.
+      - name: match_count
+        description: Rows in the sample whose value matched the pattern.
+      - name: match_rate
+        description: match_count / sampled_rows.

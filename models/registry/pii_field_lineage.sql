@@ -16,7 +16,7 @@ select
   cast(null as {{ dbt.type_string() }}) as downstream_model,
   cast(null as {{ dbt.type_string() }}) as downstream_field,
   cast(null as {{ dbt.type_int() }}) as hops
-where 1 = 0
+limit 0
 {%- else %}
 {%- for e in edges %}
 select

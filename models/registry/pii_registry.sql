@@ -21,7 +21,7 @@ with registry as (
     cast(null as {{ dbt.type_string() }}) as confidence,
     cast(null as {{ dbt.type_string() }}) as detection_method,
     cast(null as boolean) as required_in_mart
-  where 1 = 0
+  limit 0
 {%- else %}
 {%- for r in rows %}
   select

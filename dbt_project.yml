@@ -22,6 +22,14 @@ vars:
   pii_undeclared_severity: warn
   pii_undeclared_allowlist: []
 
+  # Content/value scanning (the expensive data plane). OFF by default — turn on
+  # deliberately and run on a schedule, not every build. Scans name-innocent STRING
+  # columns for PII in the actual values.
+  pii_content_scan_enabled: false
+  pii_content_sample_percent: 10          # TABLESAMPLE percent; 100 = full scan
+  pii_content_max_bytes_billed: 1000000000  # 1 GB cap per scan
+  # pii_content_scan_datasets: ["analytics", "raw"]   # defaults to target dataset
+
   # How confident a name-pattern match is. Declared columns are always DECLARED.
   pii_inference_confidence: "INFERRED_HIGH"
 
@@ -47,4 +55,6 @@ models:
     discovery:
       +materialized: table
     readiness:
+      +materialized: table
+    scan:
       +materialized: table

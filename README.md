@@ -11,6 +11,10 @@ and you get three tables in your own warehouse:
 - `pii_discovery` — undeclared PII: columns that look like PII by name (read from
   `INFORMATION_SCHEMA`) but were never declared via `meta.pii`. This catches PII in
   tables you never documented, including raw sources and leaks into mart layers.
+- `pii_shred_readiness` — per-field verdict (READY / AT_RISK / NOT_SHREDDABLE /
+  UNREGISTERED): can this PII actually be crypto-shredded, and where does it escape to?
+- `pii_content_findings` — PII found by scanning column *values*, not names (off by
+  default; the expensive data plane).
 
 It is **metadata-first and performant by design**: detection and lineage read the dbt
 graph only and issue zero warehouse queries, so they are safe to run on every build.
@@ -86,7 +90,7 @@ vars:
 | Declare — `meta.pii` + name inference | free (graph only) | every build |
 | Propagate — DAG walk → `pii_field_lineage` | free (graph only) | every build |
 | Discover — `INFORMATION_SCHEMA` name scan → `pii_discovery` | cheap (metadata query, names not values) | every build |
-| Scan — sample column *values* for undeclared PII | warehouse cost | scheduled (roadmap) |
+| Scan — sample column *values* → `pii_content_findings` | warehouse cost (sampled + capped) | scheduled, off by default |
 
 ### Discovery
 
@@ -105,13 +109,29 @@ Discovery is high-recall by design: a column called `subscription_name` will mat
 to review — promote the real ones to `meta.pii` declarations, and tune `pii_name_patterns`
 to cut noise.
 
+### Content scanning
+
+`pii_content_findings` inspects actual column **values** to catch PII that names don't
+reveal — an email inside a free-text `notes` column, a phone in `description`. It is the
+expensive data plane, so it is **off by default** and built to run on a schedule:
+
+```yaml
+vars:
+  pii_content_scan_enabled: true          # off by default
+  pii_content_sample_percent: 10          # TABLESAMPLE percent (base tables only)
+  pii_content_max_bytes_billed: 1000000000  # 1 GB cap per scan
+  # pii_content_scan_datasets: ["analytics", "raw"]
+  # pii_value_patterns: {...}             # override the value regexes
+```
+
+It scans only name-innocent STRING columns (declared / name-matching columns are already
+covered by the registry + discovery), one sampled pass per table. Run it deliberately:
+`dbt build --select pii_content_findings`.
+
 ## Roadmap
 
-- `expect_no_undeclared_pii` — generic test to fail CI when `pii_discovery` is non-empty.
-- Shred-readiness view — flag PII that propagates into places it can't be cleanly
-  crypto-shredded (built on `pii_field_lineage`).
-- `pii_scan_findings` — sampled content scan (TABLESAMPLE, schema-hash cache, byte caps).
 - `pii_scan_events` — append-only change log written only on diffs.
+- Schema-hash cache — skip re-scanning unchanged tables.
 - Column-rename-aware lineage propagation.
 - `publish_registry` run-operation — push the registry to an external control plane
   (e.g. the Chameleon Key Vault).
