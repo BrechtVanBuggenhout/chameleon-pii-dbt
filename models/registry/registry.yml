@@ -22,8 +22,14 @@ models:
         description: How the field must be handled (ENCRYPT, TOKENIZE, REDACT, HASH_SURROGATE, ALLOW_AGGREGATE_ONLY, MANUAL_REVIEW).
       - name: confidence
         description: DECLARED for meta-tagged columns; INFERRED_* for name matches.
+        tests:
+          - accepted_values:
+              values: [DECLARED, INFERRED_HIGH, INFERRED_MEDIUM, INFERRED_LOW]
       - name: detection_method
         description: DECLARED or NAME_INFERENCE.
+        tests:
+          - accepted_values:
+              values: [DECLARED, NAME_INFERENCE]
       - name: required_in_mart
         description: Whether the field is intentionally allowed to reach mart layers.
 
@@ -34,9 +40,12 @@ models:
     columns:
       - name: source_resource_id
         description: Where the PII field originates.
+        tests: [not_null]
       - name: downstream_resource_id
         description: A model the field flows into.
+        tests: [not_null]
       - name: field_name
         description: The propagated PII column.
+        tests: [not_null]
       - name: hops
         description: DAG distance from origin to this downstream model.

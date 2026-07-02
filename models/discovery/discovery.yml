@@ -18,7 +18,13 @@ models:
         description: The PII-looking, undeclared column.
       - name: classification
         description: Inferred classification from the column name.
+        tests:
+          - accepted_values:
+              values: [DIRECT_IDENTIFIER, QUASI_IDENTIFIER, CONTACT, SENSITIVE, BEHAVIORAL, SYSTEM_IDENTIFIER]
       - name: detection_method
         description: Always INFORMATION_SCHEMA for this model.
+        tests:
+          - accepted_values:
+              values: [INFORMATION_SCHEMA]
       - name: discovered_at
         description: When the discovery scan ran.

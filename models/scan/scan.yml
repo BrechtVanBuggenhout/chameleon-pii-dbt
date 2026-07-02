@@ -14,8 +14,14 @@ models:
         description: Name-innocent column whose values matched a PII pattern.
       - name: pattern
         description: EMAIL | PHONE | SSN | CREDIT_CARD | IP.
+        tests:
+          - accepted_values:
+              values: [EMAIL, PHONE, SSN, CREDIT_CARD, IP]
       - name: classification
         description: Inferred classification for the matched value pattern.
+        tests:
+          - accepted_values:
+              values: [DIRECT_IDENTIFIER, QUASI_IDENTIFIER, CONTACT, SENSITIVE, BEHAVIORAL, SYSTEM_IDENTIFIER]
       - name: sampled_rows
         description: Rows examined in the sample.
       - name: match_count

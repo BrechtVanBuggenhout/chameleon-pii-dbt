@@ -21,6 +21,9 @@ graph only and issue zero warehouse queries, so they are safe to run on every bu
 (Content sampling — scanning actual values to find *undeclared* PII — is a separate,
 opt-in, scheduled layer; see roadmap.)
 
+> **Warehouse support:** BigQuery only for now. The models use BigQuery-specific SQL
+> (`INFORMATION_SCHEMA`, `TABLESAMPLE`, `regexp_contains`).
+
 ## Install
 
 In your project's `packages.yml`:
@@ -127,6 +130,14 @@ vars:
 It scans only name-innocent STRING columns (declared / name-matching columns are already
 covered by the registry + discovery), one sampled pass per table. Run it deliberately:
 `dbt build --select pii_content_findings`.
+
+## Tests
+
+The package ships assertions that run on any `dbt build`/`dbt test`: `accepted_values`
+on the classification / confidence / detection-method / pattern / readiness enums,
+`not_null` on key columns, and singular invariant tests (lineage hops >= 1, content
+`match_count <= sampled_rows`, unique `(resource_id, field_name)` in the registry). The
+`no_undeclared_pii` test warns by default (see above).
 
 ## Roadmap
 
