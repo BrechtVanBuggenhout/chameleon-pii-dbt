@@ -1,0 +1,51 @@
+name: chameleon_pii CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+  id-token: write   # required for Workload Identity Federation (keyless GCP auth)
+
+jobs:
+  dbt-build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: integration_tests
+    env:
+      DBT_BQ_PROJECT: ${{ vars.GCP_PROJECT }}
+      DBT_BQ_DATASET: chameleon_pii_ci
+      DBT_BQ_LOCATION: US
+      DBT_PROFILES_DIR: ${{ github.workspace }}/integration_tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dbt-bigquery
+        run: pip install "dbt-bigquery==1.9.2"
+
+      - name: Authenticate to GCP (Workload Identity Federation, keyless)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DBT_SA }}
+
+      - name: dbt deps
+        run: dbt deps
+
+      # Discovery + content scanning read INFORMATION_SCHEMA, so the tables must
+      # exist first. Build the fixtures, then the package scanners, then test.
+      - name: Phase 1 — build fixtures
+        run: dbt build --exclude package:chameleon_pii --full-refresh
+
+      - name: Phase 2 — build package models (content scan on)
+        run: dbt run --select package:chameleon_pii --full-refresh --vars '{pii_content_scan_enabled: true, pii_content_sample_percent: 100}'
+
+      - name: Phase 3 — run all tests (invariants + detection assertions)
+        run: dbt test

@@ -1,0 +1,11 @@
+chameleon_pii_integration_tests:
+  target: ci
+  outputs:
+    ci:
+      type: bigquery
+      method: oauth   # uses ADC provided by google-github-actions/auth (WIF, keyless)
+      project: "{{ env_var('DBT_BQ_PROJECT') }}"
+      dataset: "{{ env_var('DBT_BQ_DATASET') }}"
+      location: "{{ env_var('DBT_BQ_LOCATION', 'US') }}"
+      threads: 4
+      job_execution_timeout_seconds: 300

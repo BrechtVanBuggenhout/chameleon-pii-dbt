@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: stg_ci_customers
+    description: CI staging model. Declares some PII, leaves some undeclared on purpose.
+    meta:
+      chameleon:
+        layer: STAGING
+        owner: dbt
+    columns:
+      - name: email
+        meta:
+          pii:
+            classification: DIRECT_IDENTIFIER
+            handling: ENCRYPT
+      - name: phone
+        meta:
+          pii:
+            classification: CONTACT
+            handling: ENCRYPT
+      # full_name intentionally UNDECLARED -> exercises name discovery
+      # notes intentionally UNDECLARED     -> exercises content scanning

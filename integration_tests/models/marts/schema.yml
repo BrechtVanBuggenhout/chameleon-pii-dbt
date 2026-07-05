@@ -1,0 +1,9 @@
+version: 2
+
+models:
+  - name: dim_ci_customers
+    description: CI mart model. Documents email (no meta.pii) so lineage links it.
+    columns:
+      - name: customer_id
+      - name: email
+      - name: plan

@@ -1,0 +1,13 @@
+name: chameleon_pii_integration_tests
+version: "1.0.0"
+config-version: 2
+
+profile: chameleon_pii_integration_tests
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  chameleon_pii_integration_tests:
+    +materialized: view

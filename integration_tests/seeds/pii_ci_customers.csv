@@ -1,0 +1,5 @@
+customer_id,email,phone,full_name,plan,notes
+c1,ann@example.com,555-100-2001,Ann Blake,pro,"Reach me at ann.personal@gmail.com for anything"
+c2,ben@example.com,555-100-2002,Ben Cole,free,"Called about the invoice, will follow up"
+c3,cara@example.com,555-100-2003,Cara Dunn,pro,"SSN 123-45-6789 on file, verified"
+c4,dan@example.com,555-100-2004,Dan Ellis,enterprise,"No additional details"

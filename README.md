@@ -131,6 +131,20 @@ It scans only name-innocent STRING columns (declared / name-matching columns are
 covered by the registry + discovery), one sampled pass per table. Run it deliberately:
 `dbt build --select pii_content_findings`.
 
+## Build order
+
+`pii_registry` and `pii_field_lineage` read the dbt graph (metadata), so their order
+doesn't matter. But `pii_discovery` and `pii_content_findings` read `INFORMATION_SCHEMA`
+/ table values, so **they must run after the models they scan exist.** On a fresh build
+(or `--full-refresh`), run your models first, then the package:
+
+```bash
+dbt build --exclude package:chameleon_pii   # your models
+dbt build --select package:chameleon_pii    # then the scanners
+```
+
+On a warm warehouse (tables already present) a single `dbt build` is fine.
+
 ## Tests
 
 The package ships assertions that run on any `dbt build`/`dbt test`: `accepted_values`
