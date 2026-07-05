@@ -58,8 +58,10 @@ matched as (
     column_name,
     {{ chameleon_pii.pii_name_case('column_name') }} as classification
   from all_columns
-  -- never flag the package's own registry/discovery outputs
-  where table_name not in ('pii_registry', 'pii_field_lineage', 'pii_discovery')
+  -- never flag the package's own output tables
+  where table_name not in (
+    'pii_registry', 'pii_field_lineage', 'pii_discovery', 'pii_shred_readiness', 'pii_content_findings'
+  )
 )
 
 select
