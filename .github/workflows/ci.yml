@@ -45,7 +45,9 @@ jobs:
         run: dbt build --exclude package:chameleon_pii --full-refresh
 
       - name: Phase 2 — build package models (content scan on)
-        run: dbt run --select package:chameleon_pii --full-refresh --vars '{pii_content_scan_enabled: true, pii_content_sample_percent: 100}'
+        run: >-
+          dbt run --select package:chameleon_pii --full-refresh
+          --vars '{"pii_content_scan_enabled": true, "pii_content_sample_percent": 100}'
 
       - name: Phase 3 — run all tests (invariants + detection assertions)
         run: dbt test
