@@ -30,8 +30,8 @@ In your project's `packages.yml`:
 
 ```yaml
 packages:
-  - git: "https://github.com/chameleon-data/chameleon-pii-dbt.git"
-    revision: "0.1.0"
+  - git: "https://github.com/BrechtVanBuggenhout/chameleon-pii-dbt.git"
+    revision: "v0.7.0"
 ```
 
 Then `dbt deps`.
