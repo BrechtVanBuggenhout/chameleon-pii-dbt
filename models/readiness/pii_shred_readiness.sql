@@ -25,6 +25,10 @@ with declared as (
     handling,
     'DECLARED' as source
   from {{ ref('pii_registry') }}
+  -- Auto-registered discovery rows (detection_method = INFORMATION_SCHEMA) are
+  -- visibility entries, not governance sign-off: they stay on the DISCOVERED
+  -- branch below so their verdict remains UNREGISTERED.
+  where detection_method in ('DECLARED', 'NAME_INFERENCE')
 ),
 
 discovered as (

@@ -1,5 +1,5 @@
 name: chameleon_pii
-version: "0.1.0"
+version: "0.8.0"
 config-version: 2
 
 require-dbt-version: [">=1.5.0", "<2.0.0"]
@@ -16,6 +16,12 @@ vars:
   # override with a list of datasets to widen coverage.
   pii_discovery_enabled: true
   # pii_discovery_datasets: ["analytics", "raw", "marts"]
+
+  # Zero-config registry: flow discovery findings into pii_registry as visibility
+  # entries (detection_method = INFORMATION_SCHEMA). They never override
+  # declarations and still count as undeclared for the no_undeclared_pii test
+  # and the UNREGISTERED readiness verdict.
+  pii_auto_register_discovered: true
 
   # CI enforcement: the no_undeclared_pii test on pii_discovery. Defaults to 'warn'
   # so installing the package never breaks a build; set to 'error' in CI to enforce.

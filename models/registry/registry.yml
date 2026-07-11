@@ -26,10 +26,13 @@ models:
           - accepted_values:
               values: [DECLARED, INFERRED_HIGH, INFERRED_MEDIUM, INFERRED_LOW]
       - name: detection_method
-        description: DECLARED or NAME_INFERENCE.
+        description: >
+          DECLARED or NAME_INFERENCE for graph-based entries; INFORMATION_SCHEMA for
+          discovery findings auto-registered via `pii_auto_register_discovered`
+          (visibility only — they still count as undeclared for tests and readiness).
         tests:
           - accepted_values:
-              values: [DECLARED, NAME_INFERENCE]
+              values: [DECLARED, NAME_INFERENCE, INFORMATION_SCHEMA]
       - name: required_in_mart
         description: Whether the field is intentionally allowed to reach mart layers.
 

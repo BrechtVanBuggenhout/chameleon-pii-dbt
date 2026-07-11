@@ -3,13 +3,14 @@
 What has shipped, what state the package is in, and what comes next.
 (Newest release last; see git tags for exact code.)
 
-## Status — 2026-07-09
+## Status — 2026-07-11
 
-**Feature-complete** for the BigQuery-only v0 scope. Five models, 22 ride-along
-tests, CI with keyless (WIF) auth against a dedicated `chameleon_pii_ci` dataset.
-Pinned at `v0.7.0` by the consuming project (`chameleon-dataplatform-dbt`).
-Also feeds Chameleon's Key Vault registry (federated: connector + dbt + manual
-slices; dbt slice activates when `PII_REGISTRY_DATASET_ID` is set).
+**Feature-complete and PUBLIC** (repo public 2026-07-09, CI green, launch post live
+at chameleon-data.com/learn/dbt-pii-package). Five models, 22 ride-along tests, CI
+with keyless (WIF) auth against a dedicated `chameleon_pii_ci` dataset. Pinned at
+`v0.8.0` by the consuming project (`chameleon-dataplatform-dbt`). Also feeds
+Chameleon's Key Vault registry (federated: connector + dbt + manual slices; dbt
+slice activates when `PII_REGISTRY_DATASET_ID` is set).
 
 ## Release history
 
@@ -22,6 +23,7 @@ slices; dbt slice activates when `PII_REGISTRY_DATASET_ID` is set).
 | v0.5.0 | `pii_content_findings`: opt-in **value** scanning (email/phone/ssn/cc/ip regexes) on name-innocent STRING columns. Guardrails: off by default, TABLESAMPLE, `maximum_bytes_billed` cap. |
 | v0.6.0 | 22 lightweight dbt tests riding on `dbt build` (accepted_values on enums, not_null on keys, 3 singular invariants). |
 | v0.7.0 | GitHub Actions CI with keyless WIF auth + nested `integration_tests/` project with planted-PII fixtures proving detection end-to-end. Documented the **two-phase build order** requirement (discovery/content models must run after the models they scan exist). |
+| v0.8.0 | First-run UX: `pii_auto_register_discovered` (default on) flows discovery findings into `pii_registry` as visibility entries (`detection_method = INFORMATION_SCHEMA`; still count as undeclared for the test + UNREGISTERED verdict — readiness filters them from its declared branch). `dbt run-operation pii_report` prints a terminal summary (registry/lineage/readiness counts, undeclared findings with allowlist status, next steps). README restructured to lead with the zero-config quick start. |
 
 ## Known limitations
 
@@ -36,18 +38,13 @@ slices; dbt slice activates when `PII_REGISTRY_DATASET_ID` is set).
 ## Next steps
 
 ### Distribution (highest leverage — the package is the adoption wedge)
-1. **Finish CI activation**: add the 3 GitHub Actions *variables* on this repo —
-   `GCP_PROJECT=chameleon-dev-496718`,
-   `GCP_DBT_SA=chameleon-dbt-dev@chameleon-dev-496718.iam.gserviceaccount.com`,
-   `GCP_WIF_PROVIDER=projects/1075733109023/locations/global/workloadIdentityPools/github-actions-dev-pool/providers/github-provider`
-   — then trigger the workflow once to confirm green.
-2. **Make the repo public** and submit to **dbt Hub** (public repos only).
-3. **Launch write-up**: "we found PII leaking into our mart layer with zero
-   bytes scanned" — the `email_token` → `dim_users` story, metadata-plane
-   design, shred-readiness verdicts. Link it from chameleon-data.com
-   (the /learn cluster is the natural home) and post where data engineers read.
-4. Add a README badge for CI + a short GIF/screenshot of `pii_shred_readiness`
-   output.
+1. ~~Finish CI activation~~ DONE 2026-07-09 (variables set, workflow green on push).
+2. ~~Make the repo public~~ DONE 2026-07-09. **Submit to dbt Hub** — still open.
+3. ~~Launch write-up~~ DONE 2026-07-09 — live at
+   chameleon-data.com/learn/dbt-pii-package. **Distribution posts still open**:
+   dbt Slack #i-made-this, r/dataengineering, LinkedIn, all pointing at the article.
+4. Add a README badge for CI + a screenshot/GIF of `dbt run-operation pii_report`
+   output (the report is now the natural screenshot).
 
 ### Product (build only when pulled by real users)
 5. **Cross-warehouse** via `adapter.dispatch` — Snowflake first. This 5–10×es

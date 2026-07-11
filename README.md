@@ -1,12 +1,68 @@
 # chameleon_pii
 
-A dbt package that **automatically flags PII columns and builds a registry** of where
-sensitive data lives and where it flows — directly inside your dbt project.
+A dbt package that **finds your PII and maps where it flows — with zero configuration
+and zero bytes scanned.** Install it, build it, and it flags every PII-looking column
+in your warehouse (email, phone, SSN, names, addresses, …), builds a registry and a
+field-level lineage map, and tells you which fields could actually be erased on a
+deletion request. No YAML required to get your first findings.
 
-You declare PII once (or let the package infer it from column names), run `dbt build`,
-and you get three tables in your own warehouse:
+It is **metadata-first by design**: detection and lineage read the dbt graph and
+`INFORMATION_SCHEMA` — not your rows — so the core models bill zero to near-zero
+bytes and are safe on every build. Value-level scanning exists as a separate,
+opt-in, scheduled layer.
 
-- `pii_registry` — one row per (model, PII field): classification, handling, confidence.
+> **Warehouse support:** BigQuery only for now. The models use BigQuery-specific SQL
+> (`INFORMATION_SCHEMA`, `TABLESAMPLE`, `regexp_contains`).
+
+## Quick start (zero config)
+
+```yaml
+# packages.yml
+packages:
+  - git: "https://github.com/BrechtVanBuggenhout/chameleon-pii-dbt.git"
+    revision: "v0.8.0"
+```
+
+```bash
+dbt deps
+dbt build                          # your models (so the scanners have tables to read)
+dbt build --select package:chameleon_pii
+dbt run-operation pii_report
+```
+
+That last command prints what was found, right in your terminal:
+
+```text
+──────────────────────────────────────────────────────────────
+ chameleon_pii report — bigquery:my-project.analytics
+──────────────────────────────────────────────────────────────
+ Registry     5 PII field(s) across 3 table(s)
+              1 declared · 0 name-inferred · 4 auto-registered from discovery
+ Lineage      1 downstream flow(s), deepest path 1 hop(s)
+ Readiness    READY 1 · AT_RISK 0 · NOT_SHREDDABLE 0 · UNREGISTERED 4
+
+ Undeclared PII:
+   ! dim_users.email_token (DIRECT_IDENTIFIER) — reaches mart
+   • raw_users.email_token (DIRECT_IDENTIFIER)
+   • raw_users.subscription_name (DIRECT_IDENTIFIER)
+ Content scan off (set pii_content_scan_enabled: true to sample values)
+──────────────────────────────────────────────────────────────
+```
+
+Out of the box, discovery matches column names across your target dataset against
+built-in patterns (email, phone, SSN, date of birth, names, addresses, IP, passport /
+national id, card / account numbers) and auto-registers what it finds
+(`pii_auto_register_discovered: true`), so the registry is populated before you write
+a single line of YAML. Declarations (below) are how you *confirm or correct* what the
+machine inferred — auto-registered findings still count as undeclared for the
+`no_undeclared_pii` test until you do.
+
+## What you get
+
+Five ordinary dbt models, materialized in your own warehouse — nothing leaves it:
+
+- `pii_registry` — one row per (table, PII field): classification, handling, confidence,
+  and how it was detected (declared / name-inferred / discovered).
 - `pii_field_lineage` — the "used where" map: every downstream model each PII field reaches.
 - `pii_discovery` — undeclared PII: columns that look like PII by name (read from
   `INFORMATION_SCHEMA`) but were never declared via `meta.pii`. This catches PII in
@@ -16,28 +72,13 @@ and you get three tables in your own warehouse:
 - `pii_content_findings` — PII found by scanning column *values*, not names (off by
   default; the expensive data plane).
 
-It is **metadata-first and performant by design**: detection and lineage read the dbt
-graph only and issue zero warehouse queries, so they are safe to run on every build.
-(Content sampling — scanning actual values to find *undeclared* PII — is a separate,
-opt-in, scheduled layer; see roadmap.)
-
-> **Warehouse support:** BigQuery only for now. The models use BigQuery-specific SQL
-> (`INFORMATION_SCHEMA`, `TABLESAMPLE`, `regexp_contains`).
-
-## Install
-
-In your project's `packages.yml`:
-
-```yaml
-packages:
-  - git: "https://github.com/BrechtVanBuggenhout/chameleon-pii-dbt.git"
-    revision: "v0.7.0"
-```
-
-Then `dbt deps`.
+Plus the `no_undeclared_pii` test: warn locally, fail the build in CI when someone
+ships a PII column nobody declared.
 
 ## Declare PII
 
+Declarations turn a machine guess into a governed fact: they set the handling policy,
+flip the field's confidence to `DECLARED`, and clear it from the undeclared queue.
 Tag columns in any `schema.yml` with `meta.pii`:
 
 ```yaml
