@@ -78,20 +78,27 @@
     select *
     from (
       select
-        cast(null as string) as system,
-        cast(null as string) as table_name,
-        cast(null as string) as column_name,
-        cast(null as string) as pattern,
-        cast(null as string) as classification,
-        cast(null as int64) as sampled_rows,
-        cast(null as int64) as match_count,
-        cast(null as float64) as match_rate,
-        cast(null as timestamp) as scanned_at
+        cast(null as {{ dbt.type_string() }}) as system,
+        cast(null as {{ dbt.type_string() }}) as table_name,
+        cast(null as {{ dbt.type_string() }}) as column_name,
+        cast(null as {{ dbt.type_string() }}) as pattern,
+        cast(null as {{ dbt.type_string() }}) as classification,
+        cast(null as {{ dbt.type_int() }}) as sampled_rows,
+        cast(null as {{ dbt.type_int() }}) as match_count,
+        cast(null as {{ dbt.type_float() }}) as match_rate,
+        cast(null as {{ dbt.type_timestamp() }}) as scanned_at
     ) as _shell
     where false
   {%- endset -%}
 
   {% if not var('pii_content_scan_enabled', false) or not execute %}
+    {{ return(empty_sql) }}
+  {% endif %}
+
+  {# Content scanning uses BigQuery-specific SQL (TABLESAMPLE, bytes-billed cap).
+     On other adapters the model builds as an empty shell. #}
+  {% if target.type != 'bigquery' %}
+    {% do log('chameleon_pii: content scanning is BigQuery-only for now; pii_content_findings will be empty on ' ~ target.type ~ '.', info=True) %}
     {{ return(empty_sql) }}
   {% endif %}
 

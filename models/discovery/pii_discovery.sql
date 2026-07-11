@@ -28,13 +28,7 @@ limit 0
 {%- else %}
 
 with all_columns as (
-  {%- for ds in datasets %}
-  select '{{ ds }}' as table_schema, table_name, column_name
-  from `{{ target.project }}.{{ ds }}.INFORMATION_SCHEMA.COLUMNS`
-  {%- if not loop.last %}
-  union all
-  {%- endif %}
-  {%- endfor %}
+  {{ chameleon_pii.pii_information_schema_columns(datasets) }}
 ),
 
 declared as (
@@ -65,7 +59,8 @@ matched as (
 )
 
 select
-  '{{ target.type }}:' || '{{ target.project }}' || '.' || m.table_schema || '.' || m.table_name as resource_id,
+  {#- target.database == target.project on BigQuery; portable elsewhere -#}
+  '{{ target.type }}:' || '{{ target.database }}' || '.' || m.table_schema || '.' || m.table_name as resource_id,
   m.table_schema,
   m.table_name,
   m.column_name as field_name,

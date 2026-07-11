@@ -58,10 +58,10 @@ with registry as (
     table_name as model_name,
     '{{ target.type }}' as system,
     case
-      when regexp_contains(table_name, r'^stg_') then 'STAGING'
-      when regexp_contains(table_name, r'^int_') then 'INTERMEDIATE'
-      when regexp_contains(table_name, r'^(dim_|mart_|fct_)') then 'MART'
-      when regexp_contains(table_name, r'^raw_') then 'RAW'
+      when {{ chameleon_pii.pii_regexp('table_name', '^stg_') }} then 'STAGING'
+      when {{ chameleon_pii.pii_regexp('table_name', '^int_') }} then 'INTERMEDIATE'
+      when {{ chameleon_pii.pii_regexp('table_name', '^(dim_|mart_|fct_)') }} then 'MART'
+      when {{ chameleon_pii.pii_regexp('table_name', '^raw_') }} then 'RAW'
       else 'UNKNOWN'
     end as resource_layer,
     'discovery' as owner,

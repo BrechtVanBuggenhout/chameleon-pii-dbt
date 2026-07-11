@@ -36,10 +36,10 @@ discovered as (
     resource_id,
     table_name,
     case
-      when regexp_contains(table_name, r'^stg_') then 'STAGING'
-      when regexp_contains(table_name, r'^int_') then 'INTERMEDIATE'
-      when regexp_contains(table_name, r'^(dim_|mart_|fct_)') then 'MART'
-      when regexp_contains(table_name, r'^raw_') then 'RAW'
+      when {{ chameleon_pii.pii_regexp('table_name', '^stg_') }} then 'STAGING'
+      when {{ chameleon_pii.pii_regexp('table_name', '^int_') }} then 'INTERMEDIATE'
+      when {{ chameleon_pii.pii_regexp('table_name', '^(dim_|mart_|fct_)') }} then 'MART'
+      when {{ chameleon_pii.pii_regexp('table_name', '^raw_') }} then 'RAW'
       else 'UNKNOWN'
     end as resource_layer,
     field_name,
@@ -60,7 +60,7 @@ lineage_rollup as (
     source_resource_id,
     field_name,
     count(*) as downstream_count,
-    max(case when regexp_contains(downstream_model, r'^(dim_|mart_|fct_)') then 1 else 0 end) as reaches_mart_lineage
+    max(case when {{ chameleon_pii.pii_regexp('downstream_model', '^(dim_|mart_|fct_)') }} then 1 else 0 end) as reaches_mart_lineage
   from {{ ref('pii_field_lineage') }}
   group by 1, 2
 )
