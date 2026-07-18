@@ -9,3 +9,14 @@ chameleon_pii_integration_tests:
       location: "{{ env_var('DBT_BQ_LOCATION', 'US') }}"
       threads: 4
       job_execution_timeout_seconds: 300
+
+    snowflake:
+      type: snowflake
+      account: "{{ env_var('DBT_SF_ACCOUNT') }}"
+      user: "{{ env_var('DBT_SF_USER') }}"
+      password: "{{ env_var('DBT_SF_PASSWORD') }}"
+      role: "{{ env_var('DBT_SF_ROLE') }}"
+      database: "{{ env_var('DBT_SF_DATABASE') }}"
+      warehouse: "{{ env_var('DBT_SF_WAREHOUSE') }}"
+      schema: "{{ env_var('DBT_SF_SCHEMA') }}"
+      threads: 4

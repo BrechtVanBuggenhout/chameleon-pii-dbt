@@ -11,8 +11,11 @@ It is **metadata-first by design**: detection and lineage read the dbt graph and
 bytes and are safe on every build. Value-level scanning exists as a separate,
 opt-in, scheduled layer.
 
-> **Warehouse support:** BigQuery only for now. The models use BigQuery-specific SQL
-> (`INFORMATION_SCHEMA`, `TABLESAMPLE`, `regexp_contains`).
+> **Warehouse support:** BigQuery and Snowflake. The metadata plane (registry,
+> lineage, discovery, readiness, `pii_report`) is verified identical on both —
+> same detections, same test results, run against a real Snowflake account.
+> Value-level content scanning (`pii_content_findings`) is BigQuery-only for
+> now; it builds an empty, portable-typed table on Snowflake.
 
 ## Quick start (zero config)
 
@@ -20,7 +23,7 @@ opt-in, scheduled layer.
 # packages.yml
 packages:
   - git: "https://github.com/BrechtVanBuggenhout/chameleon-pii-dbt.git"
-    revision: "v0.8.0"
+    revision: "v0.9.0"
 ```
 
 ```bash

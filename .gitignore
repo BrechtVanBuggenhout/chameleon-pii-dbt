@@ -2,5 +2,8 @@ target/
 dbt_packages/
 logs/
 .venv/
+.venv-snowflake/
 package-lock.yml
 .DS_Store
+profiles.yml
+*.env

@@ -21,29 +21,54 @@
   {%- set allowlist = var('pii_undeclared_allowlist', []) -%}
   {%- set hr = '─' * 62 -%}
 
+  {#-
+    Aliases go through adapter.quote() so the result set keeps this exact
+    (lowercase) casing regardless of adapter quoting syntax (backticks on
+    BigQuery, double quotes on Snowflake/ANSI). Snowflake uppercases
+    unquoted identifiers (including SELECT aliases), which would otherwise
+    make every row[...] lookup below silently miss.
+  -#}
+  {%- set q_total = adapter.quote('total') -%}
+  {%- set q_models = adapter.quote('models') -%}
+  {%- set q_declared = adapter.quote('declared') -%}
+  {%- set q_inferred = adapter.quote('inferred') -%}
+  {%- set q_discovered = adapter.quote('discovered') -%}
+  {%- set q_flows = adapter.quote('flows') -%}
+  {%- set q_max_hops = adapter.quote('max_hops') -%}
+  {%- set q_ready = adapter.quote('ready') -%}
+  {%- set q_at_risk = adapter.quote('at_risk') -%}
+  {%- set q_not_shreddable = adapter.quote('not_shreddable') -%}
+  {%- set q_unregistered = adapter.quote('unregistered') -%}
+  {%- set q_table_name = adapter.quote('table_name') -%}
+  {%- set q_field_name = adapter.quote('field_name') -%}
+  {%- set q_classification = adapter.quote('classification') -%}
+  {%- set q_reaches_mart = adapter.quote('reaches_mart') -%}
+  {%- set q_n = adapter.quote('n') -%}
+
   {%- set registry_row = run_query(
-    "select count(*) as total, count(distinct model_name) as models,"
-    ~ " sum(case when detection_method = 'DECLARED' then 1 else 0 end) as declared,"
-    ~ " sum(case when detection_method = 'NAME_INFERENCE' then 1 else 0 end) as inferred,"
-    ~ " sum(case when detection_method = 'INFORMATION_SCHEMA' then 1 else 0 end) as discovered"
+    "select count(*) as " ~ q_total ~ ", count(distinct model_name) as " ~ q_models ~ ","
+    ~ " sum(case when detection_method = 'DECLARED' then 1 else 0 end) as " ~ q_declared ~ ","
+    ~ " sum(case when detection_method = 'NAME_INFERENCE' then 1 else 0 end) as " ~ q_inferred ~ ","
+    ~ " sum(case when detection_method = 'INFORMATION_SCHEMA' then 1 else 0 end) as " ~ q_discovered
     ~ " from " ~ ref('pii_registry')
   ).rows[0] -%}
 
   {%- set lineage_row = run_query(
-    "select count(*) as flows, coalesce(max(hops), 0) as max_hops from " ~ ref('pii_field_lineage')
+    "select count(*) as " ~ q_flows ~ ", coalesce(max(hops), 0) as " ~ q_max_hops ~ " from " ~ ref('pii_field_lineage')
   ).rows[0] -%}
 
   {%- set readiness_row = run_query(
     "select"
-    ~ " sum(case when readiness = 'READY' then 1 else 0 end) as ready,"
-    ~ " sum(case when readiness = 'AT_RISK' then 1 else 0 end) as at_risk,"
-    ~ " sum(case when readiness = 'NOT_SHREDDABLE' then 1 else 0 end) as not_shreddable,"
-    ~ " sum(case when readiness = 'UNREGISTERED' then 1 else 0 end) as unregistered"
+    ~ " sum(case when readiness = 'READY' then 1 else 0 end) as " ~ q_ready ~ ","
+    ~ " sum(case when readiness = 'AT_RISK' then 1 else 0 end) as " ~ q_at_risk ~ ","
+    ~ " sum(case when readiness = 'NOT_SHREDDABLE' then 1 else 0 end) as " ~ q_not_shreddable ~ ","
+    ~ " sum(case when readiness = 'UNREGISTERED' then 1 else 0 end) as " ~ q_unregistered
     ~ " from " ~ ref('pii_shred_readiness')
   ).rows[0] -%}
 
   {%- set findings = run_query(
-    "select table_name, field_name, classification, reaches_mart"
+    "select table_name as " ~ q_table_name ~ ", field_name as " ~ q_field_name ~ ","
+    ~ " classification as " ~ q_classification ~ ", reaches_mart as " ~ q_reaches_mart
     ~ " from " ~ ref('pii_shred_readiness')
     ~ " where readiness = 'UNREGISTERED'"
     ~ " order by reaches_mart desc, table_name, field_name limit 15"
@@ -52,7 +77,7 @@
   {%- set content_rel = load_relation(ref('pii_content_findings')) -%}
   {%- set content_count = none -%}
   {%- if content_rel is not none and var('pii_content_scan_enabled', false) -%}
-    {%- set content_count = run_query("select count(*) as n from " ~ ref('pii_content_findings')).rows[0]['n'] -%}
+    {%- set content_count = run_query("select count(*) as " ~ q_n ~ " from " ~ ref('pii_content_findings')).rows[0]['n'] -%}
   {%- endif -%}
 
   {{ log('', info=True) }}
