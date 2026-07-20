@@ -1,5 +1,7 @@
 # chameleon_pii
 
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 A dbt package that **finds your PII and maps where it flows — with zero configuration
 and zero bytes scanned.** Install it, build it, and it flags every PII-looking column
 in your warehouse (email, phone, SSN, names, addresses, …), builds a registry and a
