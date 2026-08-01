@@ -1,0 +1,10 @@
+version: 2
+
+models:
+  - name: decrypted_views_probe
+    description: >
+      Fixture standing in for a real BigQuery Authorized decrypted view --
+      lives in its own dataset, outside pii_discovery_datasets, on purpose.
+      Deliberately has zero `meta.pii` declarations: the point being tested
+      is that this table is invisible to discovery because of which dataset
+      it's in, not because every column happens to be declared.
