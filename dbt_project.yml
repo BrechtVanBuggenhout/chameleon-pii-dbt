@@ -1,5 +1,5 @@
 name: chameleon_pii
-version: "1.0.0"
+version: "1.1.0"
 config-version: 2
 
 require-dbt-version: [">=1.5.0", "<2.0.0"]
@@ -27,6 +27,11 @@ vars:
   # so installing the package never breaks a build; set to 'error' in CI to enforce.
   pii_undeclared_severity: warn
   pii_undeclared_allowlist: []
+
+  # CI enforcement: assert_no_shred_risk_reaching_marts fails when a field is
+  # AT_RISK/NOT_SHREDDABLE/UNREGISTERED *and* reaches a mart. Same 'warn'-by-
+  # default convention as pii_undeclared_severity above.
+  pii_shred_risk_severity: warn
 
   # Content/value scanning (the expensive data plane). OFF by default — turn on
   # deliberately and run on a schedule, not every build. Scans name-innocent STRING

@@ -3,16 +3,23 @@
 What has shipped, what state the package is in, and what comes next.
 (Newest release last; see git tags for exact code.)
 
-## Status — 2026-07-18
+## Status — 2026-08-01
 
 **Feature-complete, PUBLIC, and cross-warehouse** (repo public 2026-07-09, CI green,
 launch post live at chameleon-data.com/learn/dbt-pii-package). Five models, tests
 riding on `dbt build`, CI with keyless (WIF) auth against a dedicated
 `chameleon_pii_ci` BigQuery dataset. Snowflake support verified end-to-end
-2026-07-18 against a real trial account. Pinned at `v0.9.0` by the consuming
-project (`chameleon-dataplatform-dbt`). Also feeds Chameleon's Key Vault registry
+2026-07-18 against a real trial account. Also feeds Chameleon's Key Vault registry
 (federated: connector + dbt + manual slices; dbt slice activates when
 `PII_REGISTRY_DATASET_ID` is set).
+
+`pii_shred_readiness`'s verdicts are now enforceable, not just reportable
+(`assert_no_shred_risk_reaching_marts`, v1.1.0) -- closes the gap found while
+auditing `chameleon-dataplatform-dbt` (Chameleon's own real dbt project): it
+already had `no_undeclared_pii` wired up, but only at `warn`, and nothing
+enforced shred-readiness at all. Pinned at `v0.9.0` there as of this writing;
+upgrading it to pick up v1.1.0 and turning both severities to `error` is the
+natural next step, tracked separately in that repo.
 
 ## Release history
 
@@ -28,6 +35,7 @@ project (`chameleon-dataplatform-dbt`). Also feeds Chameleon's Key Vault registr
 | v0.8.0 | First-run UX: `pii_auto_register_discovered` (default on) flows discovery findings into `pii_registry` as visibility entries (`detection_method = INFORMATION_SCHEMA`; still count as undeclared for the test + UNREGISTERED verdict — readiness filters them from its declared branch). `dbt run-operation pii_report` prints a terminal summary (registry/lineage/readiness counts, undeclared findings with allowlist status, next steps). README restructured to lead with the zero-config quick start. |
 | v0.9.0 | **Snowflake support, verified against a real account.** Ran the full 3-phase integration build (fixtures → package models → tests) on Snowflake: identical results to BigQuery on the same fixture (registry 7 fields/3 tables, lineage 1 flow, readiness 1 READY/2 AT_RISK/4 UNREGISTERED, discovery WARN=4 by design). Two real bugs found and fixed: (1) the two content-scan detection tests were BigQuery-only by design but ran unconditionally — gated with `{{ config(enabled = target.type == 'bigquery') }}`; (2) `pii_report`'s `run_query()` calls used unquoted SQL aliases, which Snowflake uppercases — every `row['field']` lookup silently returned nothing (registry/lineage/readiness counts and the undeclared-findings list all printed blank). Fixed by routing every alias through `adapter.quote()` (backticks on BigQuery, double quotes on Snowflake) instead of hardcoding one quoting style. Verified the fix on both adapters before and after. |
 | v1.0.0 | **Declaring the package stable.** No functional changes from v0.9.0 — this marks the package production-ready per dbt's own Semantic Versioning guidance, now that it's feature-complete, cross-warehouse verified, licensed (Apache 2.0), and checked against dbt Hub's package best-practices doc ahead of submission. (Also fixes `dbt_project.yml`'s `version` field, which had drifted to `0.8.0` and was never bumped for the v0.9.0 release.) |
+| v1.1.0 | `assert_no_shred_risk_reaching_marts` — the enforcement step `pii_shred_readiness` was missing since v0.3.0: fails when a field is AT_RISK/NOT_SHREDDABLE/UNREGISTERED *and* reaches a mart/aggregate layer, same `warn`-by-default/`pii_shred_risk_severity: error`-to-enforce convention as `no_undeclared_pii`. |
 
 ## Known limitations
 
