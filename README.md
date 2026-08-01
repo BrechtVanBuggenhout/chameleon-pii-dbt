@@ -77,8 +77,13 @@ Five ordinary dbt models, materialized in your own warehouse — nothing leaves 
 - `pii_content_findings` — PII found by scanning column *values*, not names (off by
   default; the expensive data plane).
 
-Plus the `no_undeclared_pii` test: warn locally, fail the build in CI when someone
-ships a PII column nobody declared.
+Plus two tests, both warn locally / fail-in-CI-when-you're-ready:
+`no_undeclared_pii` when someone ships a PII column nobody declared, and
+`assert_no_shred_risk_reaching_marts` when a field reaches a mart/aggregate
+layer without a crypto anchor that would actually make it unreadable there
+too -- turns `pii_shred_readiness`'s AT_RISK/NOT_SHREDDABLE/UNREGISTERED
+verdicts from a report you have to remember to check into something a build
+can fail on.
 
 ## Declare PII
 
@@ -196,8 +201,18 @@ On a warm warehouse (tables already present) a single `dbt build` is fine.
 The package ships assertions that run on any `dbt build`/`dbt test`: `accepted_values`
 on the classification / confidence / detection-method / pattern / readiness enums,
 `not_null` on key columns, and singular invariant tests (lineage hops >= 1, content
-`match_count <= sampled_rows`, unique `(resource_id, field_name)` in the registry). The
-`no_undeclared_pii` test warns by default (see above).
+`match_count <= sampled_rows`, unique `(resource_id, field_name)` in the registry).
+
+Two tests default to `warn` so installing/upgrading the package never breaks a build
+on its own -- opt into `error` deliberately once you've reviewed the findings:
+
+```yaml
+vars:
+  pii_undeclared_severity: error       # no_undeclared_pii
+  pii_undeclared_allowlist: []         # reviewed false positives, "table.column"
+
+  pii_shred_risk_severity: error       # assert_no_shred_risk_reaching_marts
+```
 
 ## Roadmap
 
