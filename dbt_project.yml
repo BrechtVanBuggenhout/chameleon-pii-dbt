@@ -19,6 +19,17 @@ vars:
   pii_discovery_enabled: true
   # pii_discovery_datasets: ["analytics", "raw", "marts"]
 
+  # Datasets that must never be swept into the pii_discovery_datasets /
+  # pii_content_scan_datasets auto-discovery default (pii_discovered_datasets()),
+  # even if a source() or model makes them structurally reachable from the dbt
+  # graph. Regexes matched against the resolved "database.schema" string. For a
+  # dataset that holds live decrypted PII by design (e.g. chameleon-key-vault's
+  # decrypted_views) this isn't optional cleanup -- scanning it and flagging its
+  # columns as "undeclared, go declare this" would be actively wrong. Has no
+  # effect on an explicit pii_discovery_datasets/pii_content_scan_datasets list;
+  # only vetoes the inferred default.
+  pii_discovery_exclude_dataset_patterns: []
+
   # Zero-config registry: flow discovery findings into pii_registry as visibility
   # entries (detection_method = INFORMATION_SCHEMA). They never override
   # declarations and still count as undeclared for the no_undeclared_pii test

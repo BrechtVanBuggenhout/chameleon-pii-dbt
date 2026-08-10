@@ -206,6 +206,19 @@ dbt run-operation pii_list_datasets
 which datasets to declare" into a concrete list to present and confirm, instead of
 asking a customer to type dataset names from memory.
 
+If a dataset should never be auto-included even though it's reachable from the graph —
+most notably a decrypted-views-style dataset holding live decrypted PII by design, where
+getting flagged as "undeclared, go declare this" would be actively wrong — carve it out
+with `pii_discovery_exclude_dataset_patterns` (regexes matched against the resolved
+`database.schema` string). This only vetoes the *inferred* default; an explicit
+`pii_discovery_datasets`/`pii_content_scan_datasets` list is never filtered by it.
+
+```yaml
+vars:
+  pii_discovery_exclude_dataset_patterns:
+    - "decrypted_views$"
+```
+
 ### Content scanning
 
 `pii_content_findings` inspects actual column **values** to catch PII that names don't

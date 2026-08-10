@@ -19,6 +19,17 @@
   Falls back to [target.schema] if the graph has neither (e.g. a brand-new project
   with no sources declared yet). Explicit `pii_discovery_datasets` /
   `pii_content_scan_datasets` vars always take precedence over this.
+
+  `pii_discovery_exclude_dataset_patterns` (regexes, matched against the qualified
+  "database.schema" string) is applied last and wins absolutely -- including over
+  the forced target-schema inclusion below. This exists for datasets that must
+  never be auto-swept in even though they're structurally reachable from the dbt
+  graph: chameleon-key-vault's decrypted_views (or a project's own equivalent)
+  holds live decrypted PII by design, and a source() or model pointed at it would
+  otherwise pull its schema straight into this default. Matching by pattern
+  against the resolved name, rather than requiring an exact schema string, means
+  this keeps working regardless of what the target schema (and therefore any
+  custom-schema-suffixed dataset name) resolves to per environment.
 -#}
 {% macro pii_discovered_datasets() %}
   {% if not execute %}{{ return([target.schema]) }}{% endif %}
@@ -42,15 +53,25 @@
   {% endfor %}
 
   {% if datasets | length == 0 %}
-    {{ return([target.schema]) }}
+    {% set datasets = [target.schema] %}
+  {% else %}
+    {% set target_qualified = target.database ~ '.' ~ target.schema %}
+    {% if target_qualified not in datasets %}
+      {% do datasets.append(target_qualified) %}
+    {% endif %}
   {% endif %}
 
-  {% set target_qualified = target.database ~ '.' ~ target.schema %}
-  {% if target_qualified not in datasets %}
-    {% do datasets.append(target_qualified) %}
-  {% endif %}
+  {% set excludes = var("pii_discovery_exclude_dataset_patterns", []) %}
+  {% set filtered = [] %}
+  {% for ds in datasets %}
+    {% set is_excluded = namespace(value=false) %}
+    {% for pattern in excludes %}
+      {% if modules.re.search(pattern, ds) %}{% set is_excluded.value = true %}{% endif %}
+    {% endfor %}
+    {% if not is_excluded.value %}{% do filtered.append(ds) %}{% endif %}
+  {% endfor %}
 
-  {{ return(datasets) }}
+  {{ return(filtered) }}
 {% endmacro %}
 
 
