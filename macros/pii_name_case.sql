@@ -8,7 +8,7 @@
   pii_regexp macro.
 #}
 {% macro pii_name_case(column_expr) %}
-  {%- set excludes = var("pii_name_exclude_patterns", []) -%}
+  {%- set excludes = var("pii_name_exclude_patterns", chameleon_pii.default_pii_name_exclude_patterns()) -%}
   {%- set patterns = var("pii_name_patterns", {}) -%}
   case
   {%- for pattern in excludes %}

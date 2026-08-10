@@ -72,16 +72,15 @@ vars:
     "passport|national_id|tax_id|drivers_license": "DIRECT_IDENTIFIER"
     "credit_card|card_number|iban|account_number": "SENSITIVE"
 
-  # Column-name patterns that veto a match from pii_name_patterns above, even
-  # when one of those patterns also matches. Checked first. Exists to keep
-  # analytics/metric fields that merely contain a PII-sounding word — e.g.
-  # `metrics_phone_impressions`, `ad_group_name`, `event_name` — from being
-  # flagged as if they held real phone numbers or personal names. Override or
-  # extend in your project's vars for company-specific dimension/metric names.
-  pii_name_exclude_patterns:
-    - "^metrics?_"
-    - "_(impressions|clicks|views|sessions|conversions|count|counts|total|totals|sum|avg|average|pct|percentage|rate|ratio|score|spend|cost|revenue|ctr|cpc|cpm|roas)$"
-    - "(^|_)(event|campaign|ad_group|ad_set|segment|cohort|experiment|variant|product|category|page|screen|report|dashboard|workflow|model|table|column|field|dataset|schema|project|metric|dimension|tag|label|template|theme|plan|tier|sku|brand|store|app|device|browser|os)_name(_|$)"
+  # pii_name_exclude_patterns is deliberately NOT set here anymore. A dbt
+  # package can't push vars into a consuming project -- setting it only in
+  # this file made it apply to this package's own dev/test runs and nowhere
+  # else, which is exactly what let real false positives (metrics_phone_*,
+  # ad_group_name, event_name) through in every actual install. The real
+  # default now lives in macros/_helpers.sql's default_pii_name_exclude_patterns(),
+  # which var("pii_name_exclude_patterns", ...) falls back to in every
+  # consuming project automatically. Override or extend it in YOUR project's
+  # own vars for company-specific dimension/metric names -- don't edit it here.
 
 models:
   chameleon_pii:

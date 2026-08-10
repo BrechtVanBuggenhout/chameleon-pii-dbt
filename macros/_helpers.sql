@@ -27,14 +27,34 @@
 {% endmacro %}
 
 
+{# Default pii_name_exclude_patterns -- lives here, not just in this package's
+   own dbt_project.yml, because a dbt package can never push vars into a
+   consuming project: var('pii_name_exclude_patterns', X) only ever falls
+   back to X when the CONSUMING project hasn't set the var itself, and a
+   fresh install never has. Without a real default here, "zero config, finds
+   your PII automatically" was false for any project with metric/dimension
+   columns shaped like metrics_phone_impressions or ad_group_name -- the
+   patterns existed (in this repo's own dbt_project.yml) but never actually
+   applied anywhere except this package's own test project. #}
+{% macro default_pii_name_exclude_patterns() %}
+  {{ return([
+    "^metrics?_",
+    "_(impressions|clicks|views|sessions|conversions|count|counts|total|totals|sum|avg|average|pct|percentage|rate|ratio|score|spend|cost|revenue|ctr|cpc|cpm|roas)$",
+    "(^|_)(event|campaign|ad_group|ad_set|segment|cohort|experiment|variant|product|category|page|screen|report|dashboard|workflow|model|table|column|field|dataset|schema|project|metric|dimension|tag|label|template|theme|plan|tier|sku|brand|store|app|device|browser|os)_name(_|$)"
+  ]) }}
+{% endmacro %}
+
+
 {# Match a column name against the configured patterns. Returns a classification
    string or none. Patterns come from var('pii_name_patterns'). Columns matching
-   var('pii_name_exclude_patterns') are vetoed first, e.g. so a metric field like
-   `metrics_phone_impressions` doesn't get flagged just because it contains "phone". #}
+   var('pii_name_exclude_patterns') (default_pii_name_exclude_patterns() above,
+   unless the consuming project overrides it) are vetoed first, e.g. so a metric
+   field like `metrics_phone_impressions` doesn't get flagged just because it
+   contains "phone". #}
 {% macro infer_pii_from_name(column_name) %}
   {% if not var("pii_inference_enabled", true) %}{{ return(none) }}{% endif %}
   {% set col = column_name | lower %}
-  {% set excludes = var("pii_name_exclude_patterns", []) %}
+  {% set excludes = var("pii_name_exclude_patterns", chameleon_pii.default_pii_name_exclude_patterns()) %}
   {% for pattern in excludes %}
     {% if modules.re.search(pattern, col) %}
       {{ return(none) }}
