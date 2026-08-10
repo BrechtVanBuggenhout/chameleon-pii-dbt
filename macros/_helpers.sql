@@ -28,11 +28,19 @@
 
 
 {# Match a column name against the configured patterns. Returns a classification
-   string or none. Patterns come from var('pii_name_patterns'). #}
+   string or none. Patterns come from var('pii_name_patterns'). Columns matching
+   var('pii_name_exclude_patterns') are vetoed first, e.g. so a metric field like
+   `metrics_phone_impressions` doesn't get flagged just because it contains "phone". #}
 {% macro infer_pii_from_name(column_name) %}
   {% if not var("pii_inference_enabled", true) %}{{ return(none) }}{% endif %}
-  {% set patterns = var("pii_name_patterns", {}) %}
   {% set col = column_name | lower %}
+  {% set excludes = var("pii_name_exclude_patterns", []) %}
+  {% for pattern in excludes %}
+    {% if modules.re.search(pattern, col) %}
+      {{ return(none) }}
+    {% endif %}
+  {% endfor %}
+  {% set patterns = var("pii_name_patterns", {}) %}
   {% for pattern, classification in patterns.items() %}
     {% if modules.re.search(pattern, col) %}
       {{ return(classification) }}

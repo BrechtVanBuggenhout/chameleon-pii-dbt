@@ -8,6 +8,10 @@ models:
       the PII that name-based detection can't see. OFF by default
       (var pii_content_scan_enabled); the expensive data plane, run on a schedule.
     columns:
+      - name: table_catalog
+        description: GCP project the scanned table lives in (pii_content_scan_datasets can span projects).
+      - name: table_schema
+        description: Dataset the scanned table lives in.
       - name: table_name
         description: Table scanned.
       - name: column_name

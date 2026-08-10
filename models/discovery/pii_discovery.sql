@@ -11,12 +11,13 @@
 -#}
 
 {%- set discovery_enabled = var('pii_discovery_enabled', true) -%}
-{%- set datasets = var('pii_discovery_datasets', [target.schema]) -%}
+{%- set datasets = var('pii_discovery_datasets', chameleon_pii.pii_discovered_datasets()) -%}
 {%- set declared = chameleon_pii.get_pii_columns() -%}
 
 {%- if not discovery_enabled %}
 select
   cast(null as {{ dbt.type_string() }}) as resource_id,
+  cast(null as {{ dbt.type_string() }}) as table_catalog,
   cast(null as {{ dbt.type_string() }}) as table_schema,
   cast(null as {{ dbt.type_string() }}) as table_name,
   cast(null as {{ dbt.type_string() }}) as field_name,
@@ -47,6 +48,7 @@ declared as (
 
 matched as (
   select
+    table_catalog,
     table_schema,
     table_name,
     column_name,
@@ -59,8 +61,11 @@ matched as (
 )
 
 select
-  {#- target.database == target.project on BigQuery; portable elsewhere -#}
-  '{{ target.type }}:' || '{{ target.database }}' || '.' || m.table_schema || '.' || m.table_name as resource_id,
+  {#- table_catalog is the GCP project (BigQuery) / database (Snowflake) the row
+      actually lives in, straight from INFORMATION_SCHEMA -- not assumed to be
+      target.database, so cross-project datasets get a correct resource_id. -#}
+  '{{ target.type }}:' || m.table_catalog || '.' || m.table_schema || '.' || m.table_name as resource_id,
+  m.table_catalog,
   m.table_schema,
   m.table_name,
   m.column_name as field_name,

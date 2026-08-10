@@ -8,6 +8,17 @@ model-paths: ["models"]
 seed-paths: ["seeds"]
 clean-targets: ["target", "dbt_packages"]
 
+vars:
+  # decrypted_views_probe (models/decrypted_views_ci/) stands in for a real
+  # decrypted-views dataset -- pii_discovered_datasets() now sweeps in every
+  # model's schema by default, so without this it would land in
+  # pii_discovery_datasets same as any other fixture, defeating the whole
+  # point of assert_decrypted_views_dataset_invisible_to_discovery.sql.
+  # End-anchored so it matches regardless of the target-schema prefix
+  # (custom-schema convention resolves to "<target_schema>_decrypted_views_ci").
+  pii_discovery_exclude_dataset_patterns:
+    - "decrypted_views_ci$"
+
 models:
   chameleon_pii_integration_tests:
     +materialized: view
