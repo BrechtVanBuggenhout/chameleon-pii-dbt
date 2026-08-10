@@ -262,5 +262,11 @@ vars:
 - `pii_scan_events` — append-only change log written only on diffs.
 - Schema-hash cache — skip re-scanning unchanged tables.
 - Column-rename-aware lineage propagation.
-- `publish_registry` run-operation — push the registry to an external control plane
-  (e.g. the Chameleon Key Vault).
+
+Previously listed here as `publish_registry` — pushing `pii_discovery` findings to an
+external control plane (the Chameleon Key Vault) so they don't wait for its next
+redeploy to become console-visible. dbt run-operations can't make outbound HTTP calls,
+so that couldn't actually ship as a run-operation; it now exists as a companion
+publisher in `chameleon-data-pipelines` (`DbtPiiDiscoveryPublisher` /
+`scripts/publish_dbt_pii_discovery.py`), run after `dbt build` finishes, reusing the
+same live discovery-events pipeline the warehouse metadata crawler already writes to.
