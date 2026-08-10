@@ -39,6 +39,7 @@
   {%- set q_at_risk = adapter.quote('at_risk') -%}
   {%- set q_not_shreddable = adapter.quote('not_shreddable') -%}
   {%- set q_unregistered = adapter.quote('unregistered') -%}
+  {%- set q_resource_id = adapter.quote('resource_id') -%}
   {%- set q_table_name = adapter.quote('table_name') -%}
   {%- set q_field_name = adapter.quote('field_name') -%}
   {%- set q_classification = adapter.quote('classification') -%}
@@ -67,7 +68,7 @@
   ).rows[0] -%}
 
   {%- set findings = run_query(
-    "select table_name as " ~ q_table_name ~ ", field_name as " ~ q_field_name ~ ","
+    "select resource_id as " ~ q_resource_id ~ ", table_name as " ~ q_table_name ~ ", field_name as " ~ q_field_name ~ ","
     ~ " classification as " ~ q_classification ~ ", reaches_mart as " ~ q_reaches_mart
     ~ " from " ~ ref('pii_shred_readiness')
     ~ " where readiness = 'UNREGISTERED'"
@@ -91,15 +92,21 @@
 
   {%- if findings | length > 0 %}
   {{ log('', info=True) }}
+  {#- resource_id is "type:project.dataset.table" (see pii_registry/pii_discovery) --
+     shown per finding so it's unambiguous which project + dataset a finding was
+     registered under, even when the same table_name shows up in more than one
+     dataset/project. Allowlisting still keys on the shorter "table.field" form
+     documented in pii_undeclared_allowlist, unchanged. -#}
   {{ log(' Undeclared PII:', info=True) }}
     {%- for f in findings %}
       {%- set key = f['table_name'] ~ '.' ~ f['field_name'] %}
+      {%- set location = f['resource_id'] ~ '.' ~ f['field_name'] %}
       {%- set marker = '!' if f['reaches_mart'] else '•' %}
       {%- set notes = [] %}
       {%- if f['reaches_mart'] %}{% do notes.append('reaches mart') %}{% endif %}
       {%- if key in allowlist %}{% do notes.append('allowlisted') %}{% endif %}
       {%- set suffix = ' — ' ~ notes | join(', ') if notes | length > 0 else '' %}
-  {{ log('   ' ~ marker ~ ' ' ~ key ~ ' (' ~ f['classification'] ~ ')' ~ suffix, info=True) }}
+  {{ log('   ' ~ marker ~ ' ' ~ location ~ ' (' ~ f['classification'] ~ ')' ~ suffix, info=True) }}
     {%- endfor %}
   {%- endif %}
 

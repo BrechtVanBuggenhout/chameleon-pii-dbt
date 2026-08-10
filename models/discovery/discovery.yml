@@ -12,6 +12,11 @@ models:
     columns:
       - name: resource_id
         description: "Stable id, e.g. bigquery:project.dataset.table."
+      - name: table_catalog
+        description: >
+          GCP project (BigQuery) / database (Snowflake) the table actually lives in.
+          Read from INFORMATION_SCHEMA per row, not assumed to be the target project —
+          holds even when pii_discovery_datasets spans multiple GCP projects.
       - name: table_name
         description: Table the undeclared column lives in.
       - name: field_name

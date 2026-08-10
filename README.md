@@ -135,7 +135,26 @@ vars:
   pii_name_patterns:
     "(^|_)email(_|$)": DIRECT_IDENTIFIER
     # add your own column-name → classification rules
+  pii_name_exclude_patterns:
+    - "^metrics?_"
+    # add your own company-specific dimension/metric names that shouldn't match
 ```
+
+### Cutting false positives
+
+Name inference is high-recall by design — `pii_name_patterns` matches on substrings, so
+a metric field that merely *contains* a PII-sounding word can get flagged: an ad
+platform's `metrics_phone_impressions` or `metrics_phone_through_rate` (contains
+"phone") or an analytics event's `event_name` / `ad_group_name` (ends in "name") are
+not actually a phone number or a person's name.
+
+`pii_name_exclude_patterns` runs first and vetoes a match even when a
+`pii_name_patterns` entry also matches. It ships with sane defaults covering the
+shapes above — metric-prefixed/-suffixed fields (`metrics_*`, `*_impressions`,
+`*_rate`, `*_count`, ...) and common non-person `*_name` dimensions (`event_name`,
+`campaign_name`, `product_name`, ...). Extend it in your project's vars for
+company-specific names it doesn't already know about, instead of hand-tuning
+`pii_name_patterns` itself.
 
 ## How it works
 
@@ -155,13 +174,37 @@ It reads names, not row values, so it stays in the metadata plane. Configure it 
 ```yaml
 vars:
   pii_discovery_enabled: true
-  pii_discovery_datasets: ["analytics", "raw"]   # defaults to the target dataset
+  pii_discovery_datasets: ["analytics", "raw"]   # optional — see auto-discovery below
 ```
 
 Discovery is high-recall by design: a column called `subscription_name` will match the
 `name` pattern even though it is not a person's name. Findings are `INFERRED` candidates
-to review — promote the real ones to `meta.pii` declarations, and tune `pii_name_patterns`
-to cut noise.
+to review — promote the real ones to `meta.pii` declarations, or add a rule to
+`pii_name_exclude_patterns` (above) to cut the noise for good.
+
+#### Auto-discovered datasets
+
+`pii_discovery_datasets` and `pii_content_scan_datasets` are optional. Leave them unset
+and the package infers the dataset list itself from the dbt graph — every schema behind
+a declared `source()` across your project's `sources.yml` files, plus every model's own
+schema, plus the target schema. No more hand-grepping every `sources.yml` to keep a list
+in sync, and it survives the list drifting as sources get added.
+
+Crucially, this is **not** limited to the target project: a `source()` that overrides
+`database:` to point at a different GCP project (or Snowflake database) is picked up
+too, and scanned in that project — `pii_discovery`/`pii_content_findings` rows carry a
+`table_catalog` column with the actual project/database each finding came from, so nothing
+gets silently mis-attributed to the target project. An explicit `pii_discovery_datasets`
+/ `pii_content_scan_datasets` list still wins if you set one.
+
+```bash
+# See exactly what the package would scan by default, without running it:
+dbt run-operation pii_list_datasets
+```
+
+`pii_list_datasets` is also what the Chameleon installer shells out to — it turns "guess
+which datasets to declare" into a concrete list to present and confirm, instead of
+asking a customer to type dataset names from memory.
 
 ### Content scanning
 
@@ -174,7 +217,7 @@ vars:
   pii_content_scan_enabled: true          # off by default
   pii_content_sample_percent: 10          # TABLESAMPLE percent (base tables only)
   pii_content_max_bytes_billed: 1000000000  # 1 GB cap per scan
-  # pii_content_scan_datasets: ["analytics", "raw"]
+  # pii_content_scan_datasets: ["analytics", "raw"]   # optional — see auto-discovery above
   # pii_value_patterns: {...}             # override the value regexes
 ```
 

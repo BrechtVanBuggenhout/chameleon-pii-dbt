@@ -37,6 +37,9 @@
 {#
   Returns the STRING columns worth scanning: base tables only, name-innocent
   (not declared, not matching a PII name pattern), excluding the package outputs.
+  `datasets` entries may be a plain schema name (implicitly target.project) or a
+  fully-qualified "project.schema" (chameleon_pii.pii_split_dataset), so scanning
+  can span GCP projects, not just the target one.
 #}
 {% macro get_content_scan_candidates(datasets) %}
   {% set candidates = [] %}
@@ -50,9 +53,10 @@
 
   {% set query %}
     {% for ds in datasets %}
-    select '{{ ds }}' as dataset, c.table_name, c.column_name
-    from `{{ target.project }}.{{ ds }}.INFORMATION_SCHEMA.COLUMNS` c
-    join `{{ target.project }}.{{ ds }}.INFORMATION_SCHEMA.TABLES` t
+    {%- set parsed = chameleon_pii.pii_split_dataset(ds) %}
+    select '{{ parsed.database }}' as project, '{{ parsed.schema }}' as dataset, c.table_name, c.column_name
+    from `{{ parsed.database }}.{{ parsed.schema }}.INFORMATION_SCHEMA.COLUMNS` c
+    join `{{ parsed.database }}.{{ parsed.schema }}.INFORMATION_SCHEMA.TABLES` t
       on c.table_name = t.table_name
     where t.table_type = 'BASE TABLE' and c.data_type = 'STRING'
     {% if not loop.last %}union all{% endif %}
@@ -66,7 +70,7 @@
     {% if tbl in own_tables %}{% continue %}{% endif %}
     {% if (tbl ~ '.' ~ col) in declared_keys %}{% continue %}{% endif %}
     {% if chameleon_pii.infer_pii_from_name(col) is not none %}{% continue %}{% endif %}
-    {% do candidates.append({'dataset': row['dataset'], 'table': tbl, 'column': col}) %}
+    {% do candidates.append({'project': row['project'], 'dataset': row['dataset'], 'table': tbl, 'column': col}) %}
   {% endfor %}
 
   {{ return(candidates) }}
@@ -79,6 +83,8 @@
     from (
       select
         cast(null as {{ dbt.type_string() }}) as system,
+        cast(null as {{ dbt.type_string() }}) as table_catalog,
+        cast(null as {{ dbt.type_string() }}) as table_schema,
         cast(null as {{ dbt.type_string() }}) as table_name,
         cast(null as {{ dbt.type_string() }}) as column_name,
         cast(null as {{ dbt.type_string() }}) as pattern,
@@ -102,7 +108,7 @@
     {{ return(empty_sql) }}
   {% endif %}
 
-  {% set datasets = var('pii_content_scan_datasets', [target.schema]) %}
+  {% set datasets = var('pii_content_scan_datasets', chameleon_pii.pii_discovered_datasets()) %}
   {% set pct = var('pii_content_sample_percent', 10) %}
   {% set patterns = chameleon_pii.content_scan_value_patterns() %}
   {% set candidates = chameleon_pii.get_content_scan_candidates(datasets) %}
@@ -113,8 +119,8 @@
 
   {% set tables = {} %}
   {% for c in candidates %}
-    {% set key = c.dataset ~ '.' ~ c.table %}
-    {% if key not in tables %}{% do tables.update({key: {'dataset': c.dataset, 'table': c.table, 'columns': []}}) %}{% endif %}
+    {% set key = c.project ~ '.' ~ c.dataset ~ '.' ~ c.table %}
+    {% if key not in tables %}{% do tables.update({key: {'project': c.project, 'dataset': c.dataset, 'table': c.table, 'columns': []}}) %}{% endif %}
     {% do tables[key].columns.append(c.column) %}
   {% endfor %}
 
@@ -138,13 +144,14 @@
     {% set cte %}
 {{ safe }}_agg as (
   select count(*) as sampled_rows, {{ countif_exprs | join(', ') }}
-  from `{{ target.project }}.{{ tbl.dataset }}.{{ tbl.table }}`{{ sample_clause }}
+  from `{{ tbl.project }}.{{ tbl.dataset }}.{{ tbl.table }}`{{ sample_clause }}
 )
     {%- endset %}
     {% do agg_ctes.append(cte) %}
     {% for cp in col_pat %}
       {% set sel %}
-select '{{ tbl.table }}' as table_name, '{{ cp.col }}' as column_name, '{{ cp.pattern }}' as pattern,
+select '{{ tbl.project }}' as table_catalog, '{{ tbl.dataset }}' as table_schema,
+       '{{ tbl.table }}' as table_name, '{{ cp.col }}' as column_name, '{{ cp.pattern }}' as pattern,
        '{{ chameleon_pii.content_scan_pattern_class(cp.pattern) }}' as classification,
        sampled_rows, {{ cp.alias }} as match_count
 from {{ safe }}_agg
@@ -161,7 +168,7 @@ findings as (
 )
 select
   '{{ target.type }}' as system,
-  table_name, column_name, pattern, classification,
+  table_catalog, table_schema, table_name, column_name, pattern, classification,
   sampled_rows, match_count,
   safe_divide(match_count, sampled_rows) as match_rate,
   current_timestamp() as scanned_at

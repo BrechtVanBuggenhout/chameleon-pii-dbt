@@ -30,12 +30,33 @@ regexp_instr({{ subject }}, '{{ pattern }}') > 0
 {%- endmacro %}
 
 {#-
-  All column names across the configured datasets/schemas, as a subquery body
-  yielding (table_schema, table_name, column_name). BigQuery scopes
-  INFORMATION_SCHEMA per dataset, so it unions one select per dataset;
-  Snowflake has one database-wide information_schema, so it filters — and
-  lowercases, since Snowflake stores unquoted identifiers uppercase while the
-  dbt graph (and BigQuery) use lowercase.
+  Splits a dataset entry into (database, schema). Accepts a plain schema name
+  ("analytics", implicitly under target.database) or a fully-qualified
+  "database.schema" (what pii_discovered_datasets() emits, e.g. a source() that
+  overrides `database:` to point at a different GCP project/Snowflake database).
+  This is what makes cross-project discovery possible instead of every dataset
+  silently being queried against target.database regardless of where it actually
+  lives.
+-#}
+{% macro pii_split_dataset(ds) %}
+  {%- set parts = ds.split('.') -%}
+  {%- if parts | length > 1 -%}
+    {{ return({'database': parts[0], 'schema': parts[1]}) }}
+  {%- else -%}
+    {{ return({'database': target.database, 'schema': parts[0]}) }}
+  {%- endif -%}
+{% endmacro %}
+
+{#-
+  All columns across the configured datasets, as a subquery body yielding
+  (table_catalog, table_schema, table_name, column_name). table_catalog is the
+  GCP project (BigQuery) / database (Snowflake) the row actually lives in — not
+  assumed to be target.project/target.database, so results stay correct when a
+  dataset comes from another project. BigQuery scopes INFORMATION_SCHEMA per
+  dataset, so it unions one select per dataset; Snowflake's is one
+  database-wide information_schema, so datasets are grouped by database and
+  filtered by schema — and lowercased, since Snowflake stores unquoted
+  identifiers uppercase while the dbt graph (and BigQuery) use lowercase.
 -#}
 {% macro pii_information_schema_columns(datasets) %}
   {{ return(adapter.dispatch('pii_information_schema_columns', 'chameleon_pii')(datasets)) }}
@@ -43,8 +64,9 @@ regexp_instr({{ subject }}, '{{ pattern }}') > 0
 
 {% macro bigquery__pii_information_schema_columns(datasets) %}
   {%- for ds in datasets %}
-  select '{{ ds }}' as table_schema, table_name, column_name
-  from `{{ target.project }}.{{ ds }}.INFORMATION_SCHEMA.COLUMNS`
+  {%- set parsed = chameleon_pii.pii_split_dataset(ds) %}
+  select table_catalog, table_schema, table_name, column_name
+  from `{{ parsed.database }}.{{ parsed.schema }}.INFORMATION_SCHEMA.COLUMNS`
   {%- if not loop.last %}
   union all
   {%- endif %}
@@ -52,14 +74,26 @@ regexp_instr({{ subject }}, '{{ pattern }}') > 0
 {% endmacro %}
 
 {% macro snowflake__pii_information_schema_columns(datasets) %}
+  {%- set by_database = {} %}
+  {%- for ds in datasets %}
+    {%- set parsed = chameleon_pii.pii_split_dataset(ds) %}
+    {%- if parsed.database not in by_database %}{% do by_database.update({parsed.database: []}) %}{% endif %}
+    {%- do by_database[parsed.database].append(parsed.schema | lower) %}
+  {%- endfor %}
+  {%- for database, schemas in by_database.items() %}
   select
+    table_catalog,
     lower(table_schema) as table_schema,
     lower(table_name) as table_name,
     lower(column_name) as column_name
-  from {{ target.database }}.information_schema.columns
+  from {{ database }}.information_schema.columns
   where lower(table_schema) in (
-    {%- for ds in datasets %}'{{ ds | lower }}'{% if not loop.last %}, {% endif %}{% endfor -%}
+    {%- for s in schemas %}'{{ s }}'{% if not loop.last %}, {% endif %}{% endfor -%}
   )
+  {%- if not loop.last %}
+  union all
+  {%- endif %}
+  {%- endfor %}
 {% endmacro %}
 
 {% macro default__pii_information_schema_columns(datasets) %}
