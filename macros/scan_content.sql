@@ -167,17 +167,32 @@
 )
     {%- endset %}
     {% do agg_ctes.append(cte) %}
+    {#- BigQuery rejects a TABLESAMPLE'd table (or a CTE derived from one)
+       referenced more than once in a query ("Sampling of table ... not
+       supported. Possible reasons: (1) sampled table referenced more than
+       once..."). One SELECT per column x pattern, each with its own
+       `FROM {safe}_agg`, hit that the moment a table had more than one
+       candidate column and sample_percent < 100 -- invisible until now
+       because the only place this has ever run (this package's own CI)
+       always samples at exactly 100%, which skips TABLESAMPLE entirely
+       (see sample_clause above). Fixed by referencing the aggregate CTE
+       exactly once per table, via a single correlated UNNEST of a literal
+       array of structs instead of one SELECT per row. #}
+    {% set struct_exprs = [] %}
     {% for cp in col_pat %}
-      {% set sel %}
-select '{{ tbl.project }}' as table_catalog, '{{ tbl.dataset }}' as table_schema,
-       '{{ tbl.table }}' as table_name, '{{ cp.col }}' as column_name, '{{ cp.data_type }}' as source_data_type,
-       '{{ cp.pattern }}' as pattern,
-       '{{ chameleon_pii.content_scan_pattern_class(cp.pattern) }}' as classification,
-       sampled_rows, {{ cp.alias }} as match_count
-from {{ safe }}_agg
-      {%- endset %}
-      {% do union_selects.append(sel) %}
+      {% do struct_exprs.append("struct('" ~ cp.col ~ "' as column_name, '" ~ cp.data_type ~ "' as source_data_type, '" ~ cp.pattern ~ "' as pattern, '" ~ chameleon_pii.content_scan_pattern_class(cp.pattern) ~ "' as classification, t." ~ cp.alias ~ " as match_count)") %}
     {% endfor %}
+    {% set sel %}
+select '{{ tbl.project }}' as table_catalog, '{{ tbl.dataset }}' as table_schema,
+       '{{ tbl.table }}' as table_name,
+       f.column_name, f.source_data_type, f.pattern, f.classification,
+       t.sampled_rows, f.match_count
+from {{ safe }}_agg as t,
+unnest([
+{{ struct_exprs | join(',\n') }}
+]) as f
+    {%- endset %}
+    {% do union_selects.append(sel) %}
   {% endfor %}
 
   {% set final %}
