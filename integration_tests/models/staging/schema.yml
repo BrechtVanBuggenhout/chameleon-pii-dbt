@@ -20,3 +20,17 @@ models:
             handling: ENCRYPT
       # full_name intentionally UNDECLARED -> exercises name discovery
       # notes intentionally UNDECLARED     -> exercises content scanning
+
+  - name: stg_ci_json_probe
+    description: >
+      CI fixture for JSON content scanning. `payload` is a real BigQuery JSON
+      column, entirely undeclared, with an email and an SSN buried inside
+      nested keys in two rows and a benign control row in a third -- exercises
+      whole-blob JSON content scanning (see macros/scan_content.sql).
+    meta:
+      chameleon:
+        layer: STAGING
+        owner: dbt
+    columns:
+      - name: probe_id
+      # payload intentionally UNDECLARED -> exercises JSON content scanning

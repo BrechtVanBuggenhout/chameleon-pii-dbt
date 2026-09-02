@@ -5,8 +5,11 @@
   (`pii_content_scan_enabled`) and built with guardrails:
 
     - samples base tables with TABLESAMPLE (percent configurable);
-    - scans only STRING columns whose NAME is innocent (declared / name-matching columns
-      are already handled by the registry + discovery);
+    - scans STRING and JSON columns whose NAME is innocent (declared / name-matching
+      columns are already handled by the registry + discovery); JSON columns are
+      scanned whole-blob (TO_JSON_STRING), so a finding means "somewhere in this
+      column", not a specific nested key -- STRUCT/RECORD columns are not scanned
+      (see get_content_scan_candidates for why);
     - one sampled scan per table (all column x pattern counts in a single pass);
     - the model carries a maximum_bytes_billed cap.
 #}
@@ -35,11 +38,21 @@
 
 
 {#
-  Returns the STRING columns worth scanning: base tables only, name-innocent
-  (not declared, not matching a PII name pattern), excluding the package outputs.
-  `datasets` entries may be a plain schema name (implicitly target.project) or a
-  fully-qualified "project.schema" (chameleon_pii.pii_split_dataset), so scanning
-  can span GCP projects, not just the target one.
+  Returns the STRING and JSON columns worth scanning: base tables only,
+  name-innocent (not declared, not matching a PII name pattern), excluding
+  the package outputs. `datasets` entries may be a plain schema name
+  (implicitly target.project) or a fully-qualified "project.schema"
+  (chameleon_pii.pii_split_dataset), so scanning can span GCP projects, not
+  just the target one.
+
+  JSON columns are scanned whole-blob (see build_content_findings_sql's
+  TO_JSON_STRING wrapping) -- this finds that a JSON column contains PII
+  *somewhere*, not which nested key. STRUCT/RECORD columns are deliberately
+  NOT included here: unlike JSON, a STRUCT's sub-fields can already be
+  individually declared in the registry at "table.column" granularity (see
+  e.g. raw_users.pii_fields), so scanning the whole STRUCT would produce
+  noisy duplicate findings against fields the registry already governs,
+  with no way to exclude just the declared sub-field.
 #}
 {% macro get_content_scan_candidates(datasets) %}
   {% set candidates = [] %}
@@ -54,11 +67,11 @@
   {% set query %}
     {% for ds in datasets %}
     {%- set parsed = chameleon_pii.pii_split_dataset(ds) %}
-    select '{{ parsed.database }}' as project, '{{ parsed.schema }}' as dataset, c.table_name, c.column_name
+    select '{{ parsed.database }}' as project, '{{ parsed.schema }}' as dataset, c.table_name, c.column_name, c.data_type
     from `{{ parsed.database }}.{{ parsed.schema }}.INFORMATION_SCHEMA.COLUMNS` c
     join `{{ parsed.database }}.{{ parsed.schema }}.INFORMATION_SCHEMA.TABLES` t
       on c.table_name = t.table_name
-    where t.table_type = 'BASE TABLE' and c.data_type = 'STRING'
+    where t.table_type = 'BASE TABLE' and c.data_type in ('STRING', 'JSON')
     {% if not loop.last %}union all{% endif %}
     {% endfor %}
   {% endset %}
@@ -70,7 +83,7 @@
     {% if tbl in own_tables %}{% continue %}{% endif %}
     {% if (tbl ~ '.' ~ col) in declared_keys %}{% continue %}{% endif %}
     {% if chameleon_pii.infer_pii_from_name(col) is not none %}{% continue %}{% endif %}
-    {% do candidates.append({'project': row['project'], 'dataset': row['dataset'], 'table': tbl, 'column': col}) %}
+    {% do candidates.append({'project': row['project'], 'dataset': row['dataset'], 'table': tbl, 'column': col, 'data_type': row['data_type']}) %}
   {% endfor %}
 
   {{ return(candidates) }}
@@ -87,6 +100,7 @@
         cast(null as {{ dbt.type_string() }}) as table_schema,
         cast(null as {{ dbt.type_string() }}) as table_name,
         cast(null as {{ dbt.type_string() }}) as column_name,
+        cast(null as {{ dbt.type_string() }}) as source_data_type,
         cast(null as {{ dbt.type_string() }}) as pattern,
         cast(null as {{ dbt.type_string() }}) as classification,
         cast(null as {{ dbt.type_int() }}) as sampled_rows,
@@ -121,7 +135,7 @@
   {% for c in candidates %}
     {% set key = c.project ~ '.' ~ c.dataset ~ '.' ~ c.table %}
     {% if key not in tables %}{% do tables.update({key: {'project': c.project, 'dataset': c.dataset, 'table': c.table, 'columns': []}}) %}{% endif %}
-    {% do tables[key].columns.append(c.column) %}
+    {% do tables[key].columns.append({'name': c.column, 'data_type': c.data_type}) %}
   {% endfor %}
 
   {% set agg_ctes = [] %}
@@ -133,11 +147,16 @@
     {% set countif_exprs = [] %}
     {% set col_pat = [] %}
     {% for col in tbl.columns %}
+      {#- JSON columns are flattened with TO_JSON_STRING before pattern
+         matching, so whole-value regex matching finds PII anywhere inside
+         the blob; STRING columns keep the exact expression this macro has
+         always generated, so existing scans are byte-identical. #}
+      {% set col_expr = ('`' ~ col.name ~ '`') if col.data_type == 'STRING' else ('TO_JSON_STRING(`' ~ col.name ~ '`)') %}
       {% for pat_name, regex in patterns.items() %}
         {% set ns.alias_id = ns.alias_id + 1 %}
         {% set alias = 'mc_' ~ ns.alias_id %}
-        {% do countif_exprs.append("countif(regexp_contains(`" ~ col ~ "`, r'" ~ regex ~ "')) as " ~ alias) %}
-        {% do col_pat.append({'col': col, 'pattern': pat_name, 'alias': alias}) %}
+        {% do countif_exprs.append("countif(regexp_contains(" ~ col_expr ~ ", r'" ~ regex ~ "')) as " ~ alias) %}
+        {% do col_pat.append({'col': col.name, 'data_type': col.data_type, 'pattern': pat_name, 'alias': alias}) %}
       {% endfor %}
     {% endfor %}
     {% set sample_clause = '' if pct >= 100 else ' tablesample system (' ~ pct ~ ' percent)' %}
@@ -151,7 +170,8 @@
     {% for cp in col_pat %}
       {% set sel %}
 select '{{ tbl.project }}' as table_catalog, '{{ tbl.dataset }}' as table_schema,
-       '{{ tbl.table }}' as table_name, '{{ cp.col }}' as column_name, '{{ cp.pattern }}' as pattern,
+       '{{ tbl.table }}' as table_name, '{{ cp.col }}' as column_name, '{{ cp.data_type }}' as source_data_type,
+       '{{ cp.pattern }}' as pattern,
        '{{ chameleon_pii.content_scan_pattern_class(cp.pattern) }}' as classification,
        sampled_rows, {{ cp.alias }} as match_count
 from {{ safe }}_agg
@@ -168,7 +188,7 @@ findings as (
 )
 select
   '{{ target.type }}' as system,
-  table_catalog, table_schema, table_name, column_name, pattern, classification,
+  table_catalog, table_schema, table_name, column_name, source_data_type, pattern, classification,
   sampled_rows, match_count,
   safe_divide(match_count, sampled_rows) as match_rate,
   current_timestamp() as scanned_at
