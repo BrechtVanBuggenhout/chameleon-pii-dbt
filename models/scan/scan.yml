@@ -6,8 +6,10 @@ models:
       Content/value scan results. PII found by inspecting actual column VALUES in
       name-innocent STRING or JSON columns (e.g. emails inside a free-text `notes`
       column, or buried inside a JSON payload) — the PII that name-based detection
-      can't see. A JSON-column finding means the pattern matched somewhere inside
-      the whole blob, not a specific nested key. OFF by default
+      can't see. STRING columns and the whole-blob JSON scan report a match
+      somewhere inside the value, not a specific key; JSON columns additionally get
+      path-level findings where a specific nested path (including inside arrays of
+      objects) could be pinpointed — see json_path. OFF by default
       (var pii_content_scan_enabled); the expensive data plane, run on a schedule.
     columns:
       - name: table_catalog
@@ -20,12 +22,16 @@ models:
         description: Name-innocent column whose values matched a PII pattern.
       - name: source_data_type
         description: >
-          BigQuery type of the scanned column — STRING or JSON. For JSON columns,
-          the match was found somewhere inside the whole flattened blob
-          (TO_JSON_STRING), not at a specific nested path.
+          BigQuery type of the scanned column — STRING or JSON.
         tests:
           - accepted_values:
               values: [STRING, JSON]
+      - name: json_path
+        description: >
+          NULL for STRING-column findings and for the whole-blob JSON scan (the
+          match was found somewhere inside the flattened blob, not a specific nested
+          key). Populated for a path-level JSON finding — e.g. "$.contact.email", or
+          "$.contacts[*].email" when the match came from inside an array of objects.
       - name: pattern
         description: EMAIL | PHONE | SSN | CREDIT_CARD | IP.
         tests:
