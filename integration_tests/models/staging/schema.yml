@@ -34,3 +34,18 @@ models:
     columns:
       - name: probe_id
       # payload intentionally UNDECLARED -> exercises JSON content scanning
+
+  - name: stg_ci_json_path_probe
+    description: >
+      CI fixture for Stage 2 path-level JSON content scanning. `payload` is a real
+      BigQuery JSON column, undeclared, with an email nested two levels deep in one
+      row, a planted email inside an array-of-objects element in another, and a
+      benign scalar-array control row -- exercises get_json_path_candidates and the
+      path-level countifs in build_content_findings_sql (see macros/scan_content.sql).
+    meta:
+      chameleon:
+        layer: STAGING
+        owner: dbt
+    columns:
+      - name: probe_id
+      # payload intentionally UNDECLARED -> exercises JSON path-level content scanning

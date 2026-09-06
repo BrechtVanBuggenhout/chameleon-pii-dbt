@@ -90,6 +90,145 @@
 {% endmacro %}
 
 
+{#
+  Stage 2: path-level JSON PII findings. Where the whole-blob TO_JSON_STRING scan
+  below can only say "this JSON column has PII somewhere", this discovers the actual
+  paths present in real sampled data so build_content_findings_sql can generate
+  precise per-path countifs.
+
+  Discovery runs via a temp JS UDF, not native BigQuery JSON functions, for a real
+  reason found while building this: BigQuery requires the JSONPath argument to
+  JSON_QUERY/JSON_VALUE to be a compile-time constant -- confirmed live, a query
+  trying to classify a path discovered via UNNEST(JSON_KEYS(...)) by feeding that
+  per-row path string back into JSON_QUERY fails with "Argument 2 to JSON_QUERY must
+  be a constant expression". A JS UDF sidesteps this by walking the already-parsed
+  JSON entirely in JavaScript, never calling a BigQuery JSON function with a
+  computed path. (The final scan SQL this feeds into doesn't have this problem --
+  Jinja bakes each discovered path into the generated SQL as a literal string,
+  which *is* a constant expression to BigQuery.)
+
+  The UDF returns every path with its JS `typeof`-based kind, plus an `[]` marker
+  segment showing where array boundaries are (confirmed live: `{"contacts":
+  [{"email":"a"}]}` -> "contacts" (array), "contacts[]" (object),
+  "contacts[].email" (string) -- an array of plain scalars like `{"tags":["a"]}`
+  reports "tags[]" as kind "string" directly, no further nesting). Only one level
+  of array recursion is used (per the agreed scope) -- a path containing more than
+  one "[]" is a nested array-in-array-element and is skipped.
+
+  `json_candidates` is the JSON-typed subset of get_content_scan_candidates()'s
+  output. Returns a flat list of
+    {project, dataset, table, column, kind: 'scalar'|'array', path, element_path}
+  where `path` is JSONPath ('$.contact.email'), and for kind='array', `element_path`
+  is the JSONPath *within* one array element ('$.email'), or '$' if the array holds
+  plain scalars rather than objects.
+#}
+{% macro get_json_path_candidates(json_candidates, pct) %}
+  {% set path_candidates = [] %}
+  {% if not execute or json_candidates | length == 0 %}{{ return(path_candidates) }}{% endif %}
+
+  {%- set udf -%}
+    create temp function chameleon_pii_discover_json_paths(json_str string)
+    returns array<struct<path string, kind string>>
+    language js as r"""
+    function walk(obj, prefix, results) {
+      if (obj === null || obj === undefined) return;
+      if (Array.isArray(obj)) {
+        results.push({path: prefix, kind: 'array'});
+        for (var i = 0; i < obj.length; i++) {
+          walk(obj[i], prefix + '[]', results);
+        }
+      } else if (typeof obj === 'object') {
+        if (prefix !== '') results.push({path: prefix, kind: 'object'});
+        for (var key in obj) {
+          walk(obj[key], prefix ? prefix + '.' + key : key, results);
+        }
+      } else {
+        results.push({path: prefix, kind: typeof obj});
+      }
+    }
+    var results = [];
+    try {
+      var parsed = JSON.parse(json_str);
+      walk(parsed, '', results);
+    } catch (e) {}
+    return results;
+    """;
+  {%- endset -%}
+
+  {% set tables = {} %}
+  {% for c in json_candidates %}
+    {% set key = c.project ~ '.' ~ c.dataset ~ '.' ~ c.table %}
+    {% if key not in tables %}{% do tables.update({key: {'project': c.project, 'dataset': c.dataset, 'table': c.table, 'columns': []}}) %}{% endif %}
+    {% do tables[key].columns.append(c.column) %}
+  {% endfor %}
+
+  {% set sample_clause = '' if pct >= 100 else ' tablesample system (' ~ pct ~ ' percent)' %}
+
+  {% for key, tbl in tables.items() %}
+    {#- One TABLESAMPLE read of this table -- the base table is only ever
+       referenced as `t` inside the struct literal below, so this stays within
+       the "sampled table referenced once" rule the final scan also needs. #}
+    {% set col_structs = [] %}
+    {% for col in tbl.columns %}
+      {% do col_structs.append("struct('" ~ col ~ "' as column_name, to_json_string(t.`" ~ col ~ "`) as val)") %}
+    {% endfor %}
+    {% set discover_query %}
+      {{ udf }}
+      select c.column_name, d.path, d.kind
+      from `{{ tbl.project }}.{{ tbl.dataset }}.{{ tbl.table }}` as t{{ sample_clause }},
+      unnest([{{ col_structs | join(',\n') }}]) as c,
+      unnest(chameleon_pii_discover_json_paths(c.val)) as d
+      group by c.column_name, d.path, d.kind
+    {% endset %}
+    {% set discover_results = run_query(discover_query) %}
+
+    {#- Lookup for "what kind is this exact (column, path)" -- used below to check
+       an array's element kind (path ~ '[]') without a second linear scan. #}
+    {% set kind_by_key = {} %}
+    {% for row in discover_results %}
+      {% do kind_by_key.update({row['column_name'] ~ '|' ~ row['path']: row['kind']}) %}
+    {% endfor %}
+
+    {% for row in discover_results %}
+      {% set path = row['path'] %}
+      {% set col = row['column_name'] %}
+      {% set kind = row['kind'] %}
+      {% if kind == 'object' or '[]' in path %}
+        {#- container marker, or something found *inside* an array -- object
+           markers carry no value of their own, and paths inside an array are
+           only ever consumed below via the owning array's own row, never
+           iterated standalone (skips anything more than one array level deep
+           too, since a 2nd-level path already contains '[]' itself). #}
+        {% continue %}
+      {% endif %}
+      {% if kind in ('string', 'number', 'boolean') %}
+        {% do path_candidates.append({'project': tbl.project, 'dataset': tbl.dataset, 'table': tbl.table, 'column': col, 'kind': 'scalar', 'path': '$.' ~ path, 'element_path': none}) %}
+      {% elif kind == 'array' %}
+        {% set elem_kind = kind_by_key.get(col ~ '|' ~ path ~ '[]') %}
+        {% if elem_kind in ('string', 'number', 'boolean') %}
+          {#- array of plain scalars -- match against the element itself #}
+          {% do path_candidates.append({'project': tbl.project, 'dataset': tbl.dataset, 'table': tbl.table, 'column': col, 'kind': 'array', 'path': '$.' ~ path, 'element_path': '$'}) %}
+        {% elif elem_kind == 'object' %}
+          {#- array of objects -- one candidate per scalar leaf found inside an
+             element, at any depth within that one element (still one array
+             level, since the leaf path itself contains no further '[]'). #}
+          {% set leaf_prefix = path ~ '[].' %}
+          {% for leaf in discover_results %}
+            {% if leaf['column_name'] == col and leaf['kind'] in ('string', 'number', 'boolean') and leaf['path'].startswith(leaf_prefix) %}
+              {% do path_candidates.append({'project': tbl.project, 'dataset': tbl.dataset, 'table': tbl.table, 'column': col, 'kind': 'array', 'path': '$.' ~ path, 'element_path': '$.' ~ leaf['path'][(leaf_prefix | length):]}) %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+        {#- elem_kind == 'array' (array of arrays), or none (always empty in the
+           sample) -- out of scope / nothing to discover, skipped either way. #}
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+
+  {{ return(path_candidates) }}
+{% endmacro %}
+
+
 {% macro build_content_findings_sql() %}
   {%- set empty_sql -%}
     select *
@@ -101,6 +240,7 @@
         cast(null as {{ dbt.type_string() }}) as table_name,
         cast(null as {{ dbt.type_string() }}) as column_name,
         cast(null as {{ dbt.type_string() }}) as source_data_type,
+        cast(null as {{ dbt.type_string() }}) as json_path,
         cast(null as {{ dbt.type_string() }}) as pattern,
         cast(null as {{ dbt.type_string() }}) as classification,
         cast(null as {{ dbt.type_int() }}) as sampled_rows,
@@ -138,6 +278,16 @@
     {% do tables[key].columns.append({'name': c.column, 'data_type': c.data_type}) %}
   {% endfor %}
 
+  {#- Stage 2: path-level findings for JSON columns, additive to the whole-blob scan
+     below. See get_json_path_candidates for why this needs its own discovery pass. #}
+  {% set json_path_candidates = chameleon_pii.get_json_path_candidates(candidates | selectattr('data_type', 'equalto', 'JSON') | list, pct) %}
+  {% set paths_by_table = {} %}
+  {% for p in json_path_candidates %}
+    {% set pkey = p.project ~ '.' ~ p.dataset ~ '.' ~ p.table %}
+    {% if pkey not in paths_by_table %}{% do paths_by_table.update({pkey: []}) %}{% endif %}
+    {% do paths_by_table[pkey].append(p) %}
+  {% endfor %}
+
   {% set agg_ctes = [] %}
   {% set union_selects = [] %}
   {% set ns = namespace(alias_id=0) %}
@@ -156,7 +306,29 @@
         {% set ns.alias_id = ns.alias_id + 1 %}
         {% set alias = 'mc_' ~ ns.alias_id %}
         {% do countif_exprs.append("countif(regexp_contains(" ~ col_expr ~ ", r'" ~ regex ~ "')) as " ~ alias) %}
-        {% do col_pat.append({'col': col.name, 'data_type': col.data_type, 'pattern': pat_name, 'alias': alias}) %}
+        {% do col_pat.append({'col': col.name, 'data_type': col.data_type, 'pattern': pat_name, 'alias': alias, 'json_path': none}) %}
+      {% endfor %}
+    {% endfor %}
+
+    {#- Stage 2 path-level countifs, appended into the SAME agg CTE as the columns
+       above -- no second TABLESAMPLE read. Scalar paths extract directly; array
+       paths use EXISTS (did this row's array contain >=1 match), not a per-element
+       SUM, so match_count stays one-per-row like every other finding here -- keeps
+       the existing match_count <= sampled_rows invariant true with no exceptions,
+       and avoids a correlated-subquery-SUM shape that wasn't confirmed safe. #}
+    {% for jp in paths_by_table.get(key, []) %}
+      {% for pat_name, regex in patterns.items() %}
+        {% set ns.alias_id = ns.alias_id + 1 %}
+        {% set alias = 'mc_' ~ ns.alias_id %}
+        {% if jp.kind == 'scalar' %}
+          {% do countif_exprs.append("countif(regexp_contains(json_value(`" ~ jp.column ~ "`, '" ~ jp.path ~ "'), r'" ~ regex ~ "')) as " ~ alias) %}
+          {% set display_path = jp.path %}
+        {% else %}
+          {% do countif_exprs.append("countif(exists(select 1 from unnest(json_query_array(`" ~ jp.column ~ "`, '" ~ jp.path ~ "')) as elem where regexp_contains(json_value(elem, '" ~ jp.element_path ~ "'), r'" ~ regex ~ "'))) as " ~ alias) %}
+          {% set elem_suffix = '' if jp.element_path == '$' else ('.' ~ (jp.element_path | replace('$.', ''))) %}
+          {% set display_path = jp.path ~ '[*]' ~ elem_suffix %}
+        {% endif %}
+        {% do col_pat.append({'col': jp.column, 'data_type': 'JSON', 'pattern': pat_name, 'alias': alias, 'json_path': display_path}) %}
       {% endfor %}
     {% endfor %}
     {% set sample_clause = '' if pct >= 100 else ' tablesample system (' ~ pct ~ ' percent)' %}
@@ -180,12 +352,13 @@
        array of structs instead of one SELECT per row. #}
     {% set struct_exprs = [] %}
     {% for cp in col_pat %}
-      {% do struct_exprs.append("struct('" ~ cp.col ~ "' as column_name, '" ~ cp.data_type ~ "' as source_data_type, '" ~ cp.pattern ~ "' as pattern, '" ~ chameleon_pii.content_scan_pattern_class(cp.pattern) ~ "' as classification, t." ~ cp.alias ~ " as match_count)") %}
+      {% set json_path_sql = "'" ~ cp.json_path ~ "'" if cp.json_path else ('cast(null as ' ~ dbt.type_string() ~ ')') %}
+      {% do struct_exprs.append("struct('" ~ cp.col ~ "' as column_name, '" ~ cp.data_type ~ "' as source_data_type, " ~ json_path_sql ~ " as json_path, '" ~ cp.pattern ~ "' as pattern, '" ~ chameleon_pii.content_scan_pattern_class(cp.pattern) ~ "' as classification, t." ~ cp.alias ~ " as match_count)") %}
     {% endfor %}
     {% set sel %}
 select '{{ tbl.project }}' as table_catalog, '{{ tbl.dataset }}' as table_schema,
        '{{ tbl.table }}' as table_name,
-       f.column_name, f.source_data_type, f.pattern, f.classification,
+       f.column_name, f.source_data_type, f.json_path, f.pattern, f.classification,
        t.sampled_rows, f.match_count
 from {{ safe }}_agg as t,
 unnest([
@@ -203,7 +376,7 @@ findings as (
 )
 select
   '{{ target.type }}' as system,
-  table_catalog, table_schema, table_name, column_name, source_data_type, pattern, classification,
+  table_catalog, table_schema, table_name, column_name, source_data_type, json_path, pattern, classification,
   sampled_rows, match_count,
   safe_divide(match_count, sampled_rows) as match_rate,
   current_timestamp() as scanned_at
