@@ -19,7 +19,7 @@
   {%- if allowlist | length > 0 %}
   where concat(table_name, '.', field_name) not in (
     {%- for item in allowlist %}
-    '{{ item | replace("'", "''") }}'{% if not loop.last %},{% endif %}
+    '{{ item | replace("'", "\\'") }}'{% if not loop.last %},{% endif %}
     {%- endfor %}
   )
   {%- endif %}
