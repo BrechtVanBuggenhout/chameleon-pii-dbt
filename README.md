@@ -25,7 +25,7 @@ opt-in, scheduled layer.
 # packages.yml
 packages:
   - git: "https://github.com/BrechtVanBuggenhout/chameleon-pii-dbt.git"
-    revision: "v1.3.1"
+    revision: "v1.3.2"
 ```
 
 ```bash
