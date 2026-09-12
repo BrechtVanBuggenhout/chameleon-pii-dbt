@@ -57,30 +57,22 @@ vars:
   # How confident a name-pattern match is. Declared columns are always DECLARED.
   pii_inference_confidence: "INFERRED_HIGH"
 
-  # Column-name patterns → classification. Override in your project's vars
-  # to add company-specific names. Keys are case-insensitive regexes matched
-  # against the column name.
-  pii_name_patterns:
-    "(^|_)email(_|$)": "DIRECT_IDENTIFIER"
-    "(^|_)e_?mail": "DIRECT_IDENTIFIER"
-    "(^|_)phone(_|$)|msisdn|mobile_number": "CONTACT"
-    "(^|_)ssn(_|$)|social_security": "DIRECT_IDENTIFIER"
-    "(^|_)dob(_|$)|date_of_birth|birth_date": "QUASI_IDENTIFIER"
-    "first_name|last_name|full_name|(^|_)name$": "DIRECT_IDENTIFIER"
-    "(^|_)address(_|$)|street|postcode|zip_code|postal": "QUASI_IDENTIFIER"
-    "(^|_)ip(_address)?$|ip_addr": "QUASI_IDENTIFIER"
-    "passport|national_id|tax_id|drivers_license": "DIRECT_IDENTIFIER"
-    "credit_card|card_number|iban|account_number": "SENSITIVE"
-
-  # pii_name_exclude_patterns is deliberately NOT set here anymore. A dbt
-  # package can't push vars into a consuming project -- setting it only in
-  # this file made it apply to this package's own dev/test runs and nowhere
-  # else, which is exactly what let real false positives (metrics_phone_*,
-  # ad_group_name, event_name) through in every actual install. The real
-  # default now lives in macros/_helpers.sql's default_pii_name_exclude_patterns(),
-  # which var("pii_name_exclude_patterns", ...) falls back to in every
-  # consuming project automatically. Override or extend it in YOUR project's
-  # own vars for company-specific dimension/metric names -- don't edit it here.
+  # pii_name_patterns and pii_name_exclude_patterns are deliberately NOT set
+  # here. A dbt package can't push vars into a consuming project -- setting
+  # either only in this file made it apply to this package's own dev/test
+  # runs and nowhere else, which is exactly what made "zero config, finds
+  # your PII automatically" false for every real external install: no
+  # built-in patterns ever actually matched anything (pii_name_patterns), and
+  # real false positives like metrics_phone_* / ad_group_name got through
+  # uncaught (pii_name_exclude_patterns). Confirmed live 2026-09-12 for
+  # pii_name_patterns specifically: dbt-core 1.10.x happened to still honor a
+  # dependency package's own dbt_project.yml vars as a fallback, masking this
+  # for this project's own real usage; dbt-core 1.12.x does not, and a fresh
+  # external install on it got silent, zero detections. The real defaults now
+  # live in macros/_helpers.sql's default_pii_name_patterns() /
+  # default_pii_name_exclude_patterns(), which var(..., ...) falls back to in
+  # every consuming project automatically, on every dbt-core version. Override
+  # or extend either in YOUR project's own vars -- don't edit them here.
 
 models:
   chameleon_pii:

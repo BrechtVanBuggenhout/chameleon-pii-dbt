@@ -45,12 +45,43 @@
 {% endmacro %}
 
 
+{# Default pii_name_patterns -- same bug class as default_pii_name_exclude_patterns()
+   above, just never given the same fix: var('pii_name_patterns', X) only ever
+   falls back to X when the CONSUMING project hasn't set the var, and a fresh
+   install never has. This package's own dbt_project.yml declared a real pattern
+   list, but that's only visible within this repo's own dev/integration-test
+   runs -- confirmed live (2026-09-12): on dbt-core 1.12.x specifically, a
+   dependency package's own dbt_project.yml vars are NOT used as a fallback
+   default for that package's own macros in a consuming project (dbt-core
+   1.10.x's behavior differs and happened to mask this for this project's own
+   real usage, which pins 1.10.22 -- a genuinely fresh external install on
+   current dbt-core got zero detections, silently, no error). Without a real
+   default here, "zero config, finds your PII automatically" was false for
+   every real external installer. #}
+{% macro default_pii_name_patterns() %}
+  {{ return({
+    "(^|_)email(_|$)": "DIRECT_IDENTIFIER",
+    "(^|_)e_?mail": "DIRECT_IDENTIFIER",
+    "(^|_)phone(_|$)|msisdn|mobile_number": "CONTACT",
+    "(^|_)ssn(_|$)|social_security": "DIRECT_IDENTIFIER",
+    "(^|_)dob(_|$)|date_of_birth|birth_date": "QUASI_IDENTIFIER",
+    "first_name|last_name|full_name|(^|_)name$": "DIRECT_IDENTIFIER",
+    "(^|_)address(_|$)|street|postcode|zip_code|postal": "QUASI_IDENTIFIER",
+    "(^|_)ip(_address)?$|ip_addr": "QUASI_IDENTIFIER",
+    "passport|national_id|tax_id|drivers_license": "DIRECT_IDENTIFIER",
+    "credit_card|card_number|iban|account_number": "SENSITIVE"
+  }) }}
+{% endmacro %}
+
+
 {# Match a column name against the configured patterns. Returns a classification
-   string or none. Patterns come from var('pii_name_patterns'). Columns matching
-   var('pii_name_exclude_patterns') (default_pii_name_exclude_patterns() above,
-   unless the consuming project overrides it) are vetoed first, e.g. so a metric
-   field like `metrics_phone_impressions` doesn't get flagged just because it
-   contains "phone". #}
+   string or none. Patterns come from var('pii_name_patterns')
+   (default_pii_name_patterns() above, unless the consuming project overrides
+   it). Columns matching var('pii_name_exclude_patterns')
+   (default_pii_name_exclude_patterns() above, unless the consuming project
+   overrides it) are vetoed first, e.g. so a metric field like
+   `metrics_phone_impressions` doesn't get flagged just because it contains
+   "phone". #}
 {% macro infer_pii_from_name(column_name) %}
   {% if not var("pii_inference_enabled", true) %}{{ return(none) }}{% endif %}
   {% set col = column_name | lower %}
@@ -60,7 +91,7 @@
       {{ return(none) }}
     {% endif %}
   {% endfor %}
-  {% set patterns = var("pii_name_patterns", {}) %}
+  {% set patterns = var("pii_name_patterns", chameleon_pii.default_pii_name_patterns()) %}
   {% for pattern, classification in patterns.items() %}
     {% if modules.re.search(pattern, col) %}
       {{ return(classification) }}
